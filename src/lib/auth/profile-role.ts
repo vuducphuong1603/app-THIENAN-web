@@ -57,6 +57,7 @@ async function fetchTeacherRole(
           .from(table)
           .select("role")
           .eq(column as never, value)
+          .returns<TeacherRoleRow[]>()
           .maybeSingle();
 
         if (error) {
