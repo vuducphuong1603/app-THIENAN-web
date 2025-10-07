@@ -7,11 +7,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole, Profile } from "@/types/auth";
 
 function mapRole(role?: string | null): AppRole {
-  return role === "admin" ? "admin" : "catechist";
+  if (role === "admin") return "admin";
+  if (role === "sector_leader") return "sector_leader";
+  return "catechist";
 }
 
 function roleLabel(role: AppRole) {
-  return role === "admin" ? "Ban điều hành" : "Giáo lý viên";
+  if (role === "admin") return "Ban điều hành";
+  if (role === "sector_leader") return "Phân đoàn trưởng";
+  return "Giáo lý viên";
 }
 
 function buildSections(role: AppRole): NavSection[] {
@@ -43,6 +47,31 @@ function buildSections(role: AppRole): NavSection[] {
     ];
   }
 
+  if (role === "sector_leader") {
+    return [
+      {
+        label: "Tổng quan",
+        items: [{ label: "Dashboard", href: "/dashboard" }],
+      },
+      {
+        label: "Quản lý",
+        items: [
+          { label: "Lớp học", href: "/classes" },
+          { label: "Thiếu nhi", href: "/students" },
+        ],
+      },
+      {
+        label: "Hoạt động",
+        items: [{ label: "Báo cáo", href: "/reports" }],
+      },
+      {
+        label: "Hệ thống",
+        items: [{ label: "Cài đặt", href: "/settings" }],
+      },
+    ];
+  }
+
+  // catechist role
   return [
     {
       label: "Tổng quan",
