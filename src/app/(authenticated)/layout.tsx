@@ -3,20 +3,10 @@ import type { ReactNode } from "react";
 
 import { ProtectedLayoutClient } from "@/components/layout/protected-layout-client";
 import type { NavSection } from "@/components/navigation/types";
+import { getRoleLabel } from "@/lib/auth/roles";
+import { resolveProfileRole } from "@/lib/auth/profile-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole, Profile } from "@/types/auth";
-
-function mapRole(role?: string | null): AppRole {
-  if (role === "admin") return "admin";
-  if (role === "sector_leader") return "sector_leader";
-  return "catechist";
-}
-
-function roleLabel(role: AppRole) {
-  if (role === "admin") return "Ban điều hành";
-  if (role === "sector_leader") return "Phân đoàn trưởng";
-  return "Giáo lý viên";
-}
 
 function buildSections(role: AppRole): NavSection[] {
   if (role === "admin") {
@@ -108,10 +98,16 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 
   if (!data) return null;
 
+  const resolvedRole = await resolveProfileRole(supabase, {
+    id: data.id,
+    username: data.username,
+    role: data.role,
+  });
+
   return {
     id: data.id,
     username: data.username,
-    role: mapRole(data.role),
+    role: resolvedRole,
     fullName: data.full_name,
     sector: data.sector,
     className: data.class_name,
@@ -148,7 +144,7 @@ export default async function AuthenticatedLayout({
     <ProtectedLayoutClient
       sections={buildSections(resolvedProfile.role)}
       userName={resolvedProfile.fullName || resolvedProfile.username}
-      roleLabel={roleLabel(resolvedProfile.role)}
+      roleLabel={getRoleLabel(resolvedProfile.role)}
     >
       {children}
     </ProtectedLayoutClient>

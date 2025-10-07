@@ -6,6 +6,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Profile, SessionState } from "@/types/auth";
+import { resolveProfileRole } from "@/lib/auth/profile-role";
 
 interface AuthContextValue {
   supabase: SupabaseClient;
@@ -30,10 +31,16 @@ async function loadProfile(client: SupabaseClient, userId: string) {
 
   if (!data) return null;
 
-  return {
+  const resolvedRole = await resolveProfileRole(client, {
     id: data.id,
     username: data.username,
     role: data.role,
+  });
+
+  return {
+    id: data.id,
+    username: data.username,
+    role: resolvedRole,
     fullName: data.full_name,
     sector: data.sector,
     className: data.class_name,
