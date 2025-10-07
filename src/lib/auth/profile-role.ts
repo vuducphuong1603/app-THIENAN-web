@@ -43,6 +43,8 @@ async function fetchTeacherRole(
       return null;
     }
 
+    // The data returned from the query is of type `TeacherRoleRow` which has a `role` property.
+    // We need to return the `role` property itself, which is a string or null.
     return data?.role ?? null;
   } catch (lookupError) {
     console.warn("Teacher role lookup failed:", lookupError);
