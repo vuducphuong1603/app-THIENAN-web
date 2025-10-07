@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { AppRole } from "@/types/auth";
-import { normalizeAppRole } from "./roles";
+import { normalizeAppRole, getRolePriority } from "./roles";
 
 type MinimalProfileRow = {
   id: string;
@@ -54,7 +54,7 @@ async function fetchTeacherRole(
 
       try {
         const { data, error } = await client
-          .from<TeacherRoleRow>(table)
+          .from(table)
           .select("role")
           .eq(column as never, value)
           .maybeSingle();
@@ -93,7 +93,9 @@ export async function resolveProfileRole(
 
   if (teacherRole) {
     const normalizedTeacherRole = normalizeAppRole(teacherRole);
-    if (normalizedTeacherRole !== normalizedProfileRole) {
+    // Only use teacher role if it has higher priority than profile role
+    // This prevents teacher table from downgrading admin to catechist
+    if (getRolePriority(normalizedTeacherRole) > getRolePriority(normalizedProfileRole)) {
       return normalizedTeacherRole;
     }
   }

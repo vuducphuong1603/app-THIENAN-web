@@ -63,3 +63,13 @@ export function getRoleLabel(role: AppRole): string {
   if (role === "sector_leader") return "Phân đoàn trưởng";
   return "Giáo lý viên";
 }
+
+const ROLE_PRIORITY: Record<AppRole, number> = {
+  admin: 3,
+  sector_leader: 2,
+  catechist: 1,
+};
+
+export function getRolePriority(role: AppRole): number {
+  return ROLE_PRIORITY[role];
+}
