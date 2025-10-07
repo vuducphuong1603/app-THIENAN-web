@@ -125,9 +125,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       supabase,
       session,
       signOut: async () => {
-        await supabase.auth.signOut();
-        setSession({ isLoading: false, session: null });
-        router.push("/login");
+        try {
+          await supabase.auth.signOut();
+          setSession({ isLoading: false, session: null });
+          router.push("/login");
+        } catch (error) {
+          console.error("Sign out error:", error);
+          // Force redirect even if sign out fails
+          window.location.href = "/login";
+        }
       },
       refreshProfile: async () => {
         const currentUserId = session.session?.userId;
