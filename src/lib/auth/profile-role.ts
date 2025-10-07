@@ -5,7 +5,8 @@ import { normalizeAppRole, getRolePriority } from "./roles";
 
 type MinimalProfileRow = {
   id: string;
-  username?: string | null;
+  email?: string | null;
+  phone?: string | null;
   role?: string | null;
 };
 
@@ -13,71 +14,41 @@ type TeacherRoleRow = {
   role: string | null;
 };
 
-const TEACHER_TABLE_CANDIDATES = ["teachers", "teacher"];
-
-const TEACHER_COLUMNS_BY_PRIORITY: Array<{
-  column: string;
-  derive: (profile: MinimalProfileRow) => string | null;
-}> = [
-  { column: "auth_user_id", derive: (profile) => profile.id },
-  { column: "user_id", derive: (profile) => profile.id },
-  { column: "profile_id", derive: (profile) => profile.id },
-  { column: "username", derive: (profile) => profile.username ?? null },
-  {
-    column: "phone",
-    derive: (profile) => extractPhoneCandidate(profile.username),
-  },
-  {
-    column: "phone_number",
-    derive: (profile) => extractPhoneCandidate(profile.username),
-  },
-];
-
-function extractPhoneCandidate(identifier?: string | null) {
-  if (!identifier) return null;
-  const trimmed = identifier.trim();
-  if (!trimmed) return null;
-
-  const localPart = trimmed.includes("@") ? trimmed.split("@")[0] ?? "" : trimmed;
-  const digits = localPart.replace(/\D/g, "");
-  return digits.length >= 8 ? digits : null;
-}
-
+/**
+ * Fetches the teacher role by looking up the user's phone number in the teachers table.
+ * The teachers table uses phone as the unique identifier.
+ */
 async function fetchTeacherRole(
   client: SupabaseClient,
   profile: MinimalProfileRow,
 ): Promise<string | null> {
-  for (const table of TEACHER_TABLE_CANDIDATES) {
-    for (const { column, derive } of TEACHER_COLUMNS_BY_PRIORITY) {
-      const value = derive(profile);
-      if (!value) continue;
-
-      try {
-        const { data, error } = await client
-          .from(table)
-          .select("role")
-          .eq(column as never, value)
-          .returns<TeacherRoleRow[]>()
-          .maybeSingle();
-
-        if (error) {
-          // Ignore missing table/column errors and keep trying other combinations
-          if (shouldAbortTeacherLookup(error.code)) {
-            return null;
-          }
-          continue;
-        }
-
-        if (data?.role) {
-          return data.role;
-        }
-      } catch (lookupError) {
-        console.warn(`Teacher role lookup failed for ${table}.${column}`, lookupError);
-      }
-    }
+  // Only link by phone number (the only common field between user_profiles and teachers)
+  if (!profile.phone || profile.phone.trim() === "") {
+    return null;
   }
 
-  return null;
+  try {
+    const { data, error } = await client
+      .from("teachers")
+      .select("role")
+      .eq("phone", profile.phone)
+      .returns<TeacherRoleRow[]>()
+      .maybeSingle();
+
+    if (error) {
+      // Ignore missing table/column errors
+      if (shouldAbortTeacherLookup(error.code)) {
+        return null;
+      }
+      console.warn("Teacher role lookup failed:", error);
+      return null;
+    }
+
+    return data?.role ?? null;
+  } catch (lookupError) {
+    console.warn("Teacher role lookup failed:", lookupError);
+    return null;
+  }
 }
 
 function shouldAbortTeacherLookup(errorCode?: string) {
@@ -85,6 +56,15 @@ function shouldAbortTeacherLookup(errorCode?: string) {
   return errorCode === "42501" || errorCode === "42P01" || errorCode === "42703";
 }
 
+/**
+ * Resolves the effective role for a user profile.
+ * Checks both user_profiles table and teachers table, using the role with higher priority.
+ *
+ * Priority: admin (3) > sector_leader (2) > catechist (1)
+ *
+ * Note: The database uses different role values (phan_doan_truong, giao_ly_vien)
+ * but normalizeAppRole handles the mapping.
+ */
 export async function resolveProfileRole(
   client: SupabaseClient,
   profile: MinimalProfileRow,

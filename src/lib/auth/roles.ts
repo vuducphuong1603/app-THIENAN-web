@@ -15,6 +15,7 @@ const SECTOR_ALIASES = new Set([
   "sector_leader",
   "sectorleader",
   "leader",
+  "phan_doan_truong", // Database value
   "phan doan truong",
   "phân đoàn trưởng",
   "phan-doan-truong",
@@ -27,6 +28,7 @@ const CATECHIST_ALIASES = new Set([
   "catechists",
   "teacher",
   "teachers",
+  "giao_ly_vien", // Database value
   "giao ly vien",
   "giáo lý viên",
   "giao-ly-vien",
@@ -72,4 +74,28 @@ const ROLE_PRIORITY: Record<AppRole, number> = {
 
 export function getRolePriority(role: AppRole): number {
   return ROLE_PRIORITY[role];
+}
+
+/**
+ * Converts code role values to database role values
+ * Code uses: admin, sector_leader, catechist
+ * Database uses: admin, phan_doan_truong, giao_ly_vien
+ */
+export function roleToDbValue(role: AppRole): string {
+  switch (role) {
+    case "admin":
+      return "admin";
+    case "sector_leader":
+      return "phan_doan_truong";
+    case "catechist":
+      return "giao_ly_vien";
+  }
+}
+
+/**
+ * Converts database role values to code role values
+ * Inverse of roleToDbValue
+ */
+export function dbValueToRole(dbValue: string): AppRole {
+  return normalizeAppRole(dbValue);
 }

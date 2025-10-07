@@ -86,8 +86,8 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
-    .from("profiles")
-    .select("id, username, role, full_name, sector, class_name")
+    .from("user_profiles")
+    .select("id, email, phone, role, full_name, saint_name")
     .eq("id", userId)
     .maybeSingle();
 
@@ -100,17 +100,18 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 
   const resolvedRole = await resolveProfileRole(supabase, {
     id: data.id,
-    username: data.username,
+    email: data.email,
+    phone: data.phone,
     role: data.role,
   });
 
   return {
     id: data.id,
-    username: data.username,
+    username: data.email ?? "",
     role: resolvedRole,
-    fullName: data.full_name,
-    sector: data.sector,
-    className: data.class_name,
+    fullName: data.full_name ?? `${data.saint_name ?? ""}`.trim(),
+    sector: null, // user_profiles doesn't have sector
+    className: null, // user_profiles doesn't have class_name
   } satisfies Profile;
 }
 
