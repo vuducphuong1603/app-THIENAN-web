@@ -32,7 +32,6 @@ async function fetchTeacherRole(
       .from("teachers")
       .select("role")
       .eq("phone", profile.phone)
-      .returns<TeacherRoleRow[]>()
       .maybeSingle();
 
     if (error) {
