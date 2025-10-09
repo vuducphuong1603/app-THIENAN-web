@@ -1,56 +1,27 @@
 "use client";
 
 import { Search, Upload, UserPlus, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
-import type { Sector, User } from "@/types/database";
-
-// Mock data - replace with actual API calls
-const mockUsers: User[] = [
-  {
-    id: "1",
-    username: "0912345678",
-    phone: "0912345678",
-    role: "admin",
-    saint_name: "Gioan",
-    full_name: "Nguyễn Văn A",
-    date_of_birth: "1990-01-15",
-    address: "123 Đường ABC, Quận 1, TP.HCM",
-    status: "ACTIVE",
-    sector: "CHIÊN",
-    class_id: "class-1",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-  },
-  {
-    id: "2",
-    username: "0987654321",
-    phone: "0987654321",
-    role: "giao_ly_vien",
-    saint_name: "Maria",
-    full_name: "Trần Thị B",
-    date_of_birth: "1995-05-20",
-    address: "456 Đường XYZ, Quận 2, TP.HCM",
-    status: "INACTIVE",
-    sector: "THIẾU",
-    class_id: "class-3",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-  },
-];
-
-const mockClasses = [
-  { id: "class-1", name: "Chiên 1", sector: "CHIÊN" as Sector },
-  { id: "class-2", name: "Chiên 2", sector: "CHIÊN" as Sector },
-  { id: "class-3", name: "Thiếu 1", sector: "THIẾU" as Sector },
-];
+import type { Sector } from "@/types/database";
+import {
+  fetchUsers,
+  createUser,
+  updateUser,
+  updateUserStatus,
+  type UserWithTeacherData,
+} from "@/lib/actions/users";
+import { fetchClasses } from "@/lib/actions/classes";
+import { getRoleLabel } from "@/lib/auth/roles";
 
 export default function UsersPage() {
-  const [users] = useState<User[]>(mockUsers);
+  const [users, setUsers] = useState<UserWithTeacherData[]>([]);
+  const [classes, setClasses] = useState<Array<{ id: string; name: string; sector: Sector }>>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [sectorFilter, setSectorFilter] = useState("");
@@ -59,7 +30,8 @@ export default function UsersPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserWithTeacherData | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     username: "",
@@ -82,19 +54,47 @@ export default function UsersPage() {
     { value: "giao_ly_vien", label: "Giáo lý viên" },
   ];
 
+  // Load users and classes on mount
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setIsLoading(true);
+    try {
+      const [usersResult, classesResult] = await Promise.all([
+        fetchUsers(),
+        fetchClasses(),
+      ]);
+
+      if (usersResult.data) {
+        setUsers(usersResult.data);
+      }
+
+      if (classesResult.data) {
+        setClasses(classesResult.data);
+      }
+    } catch (error) {
+      console.error("Error loading data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Filter users based on search and filters
   const filteredUsers = users.filter((user) => {
     const matchesSearch =
       user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.phone.includes(searchTerm);
+      (user.phone && user.phone.includes(searchTerm));
     const matchesRole = !roleFilter || user.role === roleFilter;
-    const matchesSector = !sectorFilter || user.sector === sectorFilter;
-    const matchesClass = !classFilter || user.class_id === classFilter;
+    const matchesSector = !sectorFilter || user.teacher_sector === sectorFilter;
+    const matchesClass = !classFilter || user.teacher_class_id === classFilter;
 
     return matchesSearch && matchesRole && matchesSector && matchesClass;
   });
 
-  const filteredClasses = mockClasses.filter((c) => !sectorFilter || c.sector === sectorFilter);
+  const filteredClasses = classes.filter((c) => !sectorFilter || c.sector === sectorFilter);
 
   const handleClearFilters = () => {
     setSearchTerm("");
@@ -119,7 +119,7 @@ export default function UsersPage() {
     setShowCreateModal(true);
   };
 
-  const handleEdit = (user: User) => {
+  const handleEdit = (user: UserWithTeacherData) => {
     setSelectedUser(user);
     setFormData({
       username: user.username,
@@ -128,31 +128,118 @@ export default function UsersPage() {
       saint_name: user.saint_name || "",
       full_name: user.full_name,
       date_of_birth: user.date_of_birth || "",
-      phone: user.phone,
+      phone: user.phone || "",
       address: user.address || "",
-      sector: user.sector || "",
-      class_id: user.class_id || "",
+      sector: (user.teacher_sector as Sector) || "",
+      class_id: user.teacher_class_id || "",
     });
     setShowEditModal(true);
   };
 
-  const handleLockAccount = (userId: string) => {
-    if (confirm("Bạn có chắc chắn muốn khóa tài khoản này?")) {
-      // API call to lock account
-      console.log("Locking account:", userId);
+  const handleSubmitCreate = async () => {
+    if (!formData.phone || !formData.password || !formData.full_name || !formData.role) {
+      alert("Vui lòng điền đầy đủ thông tin bắt buộc");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await createUser({
+        username: formData.phone, // Use phone as username
+        password: formData.password,
+        phone: formData.phone,
+        role: formData.role,
+        saint_name: formData.saint_name,
+        full_name: formData.full_name,
+        date_of_birth: formData.date_of_birth,
+        address: formData.address,
+        sector: formData.sector || undefined,
+        class_id: formData.class_id || undefined,
+      });
+
+      if (result.error) {
+        alert(`Lỗi: ${result.error}`);
+        return;
+      }
+
+      alert("Thêm người dùng thành công!");
+      setShowCreateModal(false);
+      await loadData(); // Reload users
+    } catch (error) {
+      console.error("Error creating user:", error);
+      alert("Có lỗi xảy ra khi tạo người dùng");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const getRoleLabel = (role: string) => {
-    const found = roles.find((r) => r.value === role);
-    return found?.label || role;
+  const handleSubmitEdit = async () => {
+    if (!selectedUser) return;
+
+    setIsSubmitting(true);
+    try {
+      const result = await updateUser(selectedUser.id, {
+        role: formData.role || undefined,
+        saint_name: formData.saint_name || undefined,
+        full_name: formData.full_name || undefined,
+        date_of_birth: formData.date_of_birth || undefined,
+        phone: formData.phone || undefined,
+        address: formData.address || undefined,
+        sector: formData.sector || undefined,
+        class_id: formData.class_id || undefined,
+        password: formData.password || undefined,
+      });
+
+      if (result.error) {
+        alert(`Lỗi: ${result.error}`);
+        return;
+      }
+
+      alert("Cập nhật thông tin thành công!");
+      setShowEditModal(false);
+      await loadData(); // Reload users
+    } catch (error) {
+      console.error("Error updating user:", error);
+      alert("Có lỗi xảy ra khi cập nhật người dùng");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleLockAccount = async (userId: string) => {
+    if (!confirm("Bạn có chắc chắn muốn khóa tài khoản này?")) {
+      return;
+    }
+
+    try {
+      const result = await updateUserStatus(userId, "INACTIVE");
+
+      if (result.error) {
+        alert(`Lỗi: ${result.error}`);
+        return;
+      }
+
+      alert("Đã khóa tài khoản!");
+      await loadData(); // Reload users
+    } catch (error) {
+      console.error("Error locking account:", error);
+      alert("Có lỗi xảy ra khi khóa tài khoản");
+    }
   };
 
   const getClassName = (classId: string | null | undefined) => {
     if (!classId) return "Chưa phân công";
-    const found = mockClasses.find((c) => c.id === classId);
+    const found = classes.find((c) => c.id === classId);
     return found?.name || "N/A";
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <p className="text-slate-500">Đang tải dữ liệu...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -256,16 +343,16 @@ export default function UsersPage() {
                 <p className="text-sm text-slate-500">{user.phone}</p>
               </div>
               <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {getRoleLabel(user.role)}
+                {getRoleLabel(user.role as any)}
               </span>
             </div>
 
             <div className="mt-3 space-y-1 text-sm text-slate-600">
               <p>
                 <span className="font-medium">Ngành/Lớp:</span>{" "}
-                {user.sector ? `Ngành ${user.sector}` : "N/A"}
+                {user.teacher_sector ? `Ngành ${user.teacher_sector}` : "N/A"}
                 <br />
-                <span className="ml-16">{getClassName(user.class_id)}</span>
+                <span className="ml-16">{getClassName(user.teacher_class_id)}</span>
               </p>
               <p>
                 <span className="font-medium">Liên hệ:</span> {user.phone}
@@ -282,7 +369,13 @@ export default function UsersPage() {
               <Button size="sm" variant="outline" onClick={() => handleEdit(user)} fullWidth>
                 Chỉnh sửa
               </Button>
-              <Button size="sm" variant="danger" onClick={() => handleLockAccount(user.id)} fullWidth>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => handleLockAccount(user.id)}
+                fullWidth
+                disabled={user.status === "INACTIVE"}
+              >
                 Khóa
               </Button>
             </div>
@@ -300,15 +393,15 @@ export default function UsersPage() {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <Input
-            label="Tên đăng nhập"
-            placeholder="Nhập tên đăng nhập"
-            value={formData.username}
-            onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+            label="Số điện thoại (làm username)"
+            placeholder="0912345678"
+            value={formData.phone}
+            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
           />
           <Input
             label="Mật khẩu"
             type="password"
-            placeholder="Mật khẩu mặc định: 123456"
+            placeholder="Nhập mật khẩu"
             value={formData.password}
             onChange={(e) => setFormData({ ...formData, password: e.target.value })}
           />
@@ -337,16 +430,11 @@ export default function UsersPage() {
             onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
           />
           <Input
-            label="Số điện thoại"
-            placeholder="0912345678"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          />
-          <Input
             label="Địa chỉ"
             placeholder="Nhập địa chỉ"
             value={formData.address}
             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            className="md:col-span-2"
           />
           <Select
             label="Ngành"
@@ -374,7 +462,9 @@ export default function UsersPage() {
           <Button variant="outline" onClick={() => setShowCreateModal(false)}>
             Hủy
           </Button>
-          <Button onClick={() => setShowCreateModal(false)}>Tạo mới</Button>
+          <Button onClick={handleSubmitCreate} disabled={isSubmitting}>
+            {isSubmitting ? "Đang tạo..." : "Tạo mới"}
+          </Button>
         </div>
       </Modal>
 
@@ -387,12 +477,7 @@ export default function UsersPage() {
         size="xl"
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <Input
-            label="Tên đăng nhập"
-            placeholder="Tên đăng nhập"
-            value={formData.username}
-            disabled
-          />
+          <Input label="Số điện thoại" placeholder="Số điện thoại" value={formData.phone} disabled />
           <Input
             label="Mật khẩu mới"
             type="password"
@@ -425,23 +510,41 @@ export default function UsersPage() {
             onChange={(e) => setFormData({ ...formData, date_of_birth: e.target.value })}
           />
           <Input
-            label="Số điện thoại"
-            placeholder="0912345678"
-            value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-          />
-          <Input
             label="Địa chỉ"
             placeholder="Nhập địa chỉ"
             value={formData.address}
             onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            className="md:col-span-2"
+          />
+          <Select
+            label="Ngành"
+            options={[
+              { value: "", label: "Chọn ngành" },
+              ...sectors.map((s) => ({ value: s, label: `Ngành ${s}` })),
+            ]}
+            value={formData.sector}
+            onChange={(e) => {
+              setFormData({ ...formData, sector: e.target.value as Sector, class_id: "" });
+            }}
+          />
+          <Select
+            label="Lớp"
+            options={[
+              { value: "", label: "Chọn lớp" },
+              ...filteredClasses.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            value={formData.class_id}
+            onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
+            disabled={!formData.sector}
           />
         </div>
         <div className="mt-6 flex justify-end gap-2">
           <Button variant="outline" onClick={() => setShowEditModal(false)}>
             Hủy
           </Button>
-          <Button onClick={() => setShowEditModal(false)}>Cập nhật</Button>
+          <Button onClick={handleSubmitEdit} disabled={isSubmitting}>
+            {isSubmitting ? "Đang cập nhật..." : "Cập nhật"}
+          </Button>
         </div>
       </Modal>
 
