@@ -208,14 +208,14 @@ export default function ClassesPage() {
             <input
               type="text"
               placeholder="Tìm kiếm lớp..."
-              className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={sectorFilter}
             onChange={(e) => setSectorFilter(e.target.value)}
           >
@@ -368,7 +368,7 @@ export default function ClassesPage() {
               <input
                 type="text"
                 placeholder="Tìm kiếm giáo lý viên..."
-                className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 value={teacherSearchTerm}
                 onChange={(e) => setTeacherSearchTerm(e.target.value)}
               />

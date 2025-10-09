@@ -25,33 +25,33 @@ export default function ReportsPage() {
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="text-lg font-semibold text-slate-800">Tạo báo cáo mới</h3>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Chọn tuần</option>
           </select>
           <div className="grid gap-2 md:grid-cols-2">
-            <input type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Từ ngày" />
-            <input type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Đến ngày" />
+            <input type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Từ ngày" />
+            <input type="date" className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Đến ngày" />
           </div>
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={selectedType}
             onChange={(event) => setSelectedType(event.target.value)}
           >
             <option value="attendance">Báo cáo điểm danh</option>
             <option value="score">Báo cáo điểm số</option>
           </select>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Tất cả ngành</option>
             <option>Chiên</option>
             <option>Ấu</option>
           </select>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Tất cả lớp</option>
           </select>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Năm học 2025-2026</option>
           </select>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Tất cả buổi</option>
             <option>Thứ 5</option>
             <option>Chủ nhật</option>

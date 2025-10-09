@@ -90,17 +90,17 @@ export default function PerformancePage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h3 className="text-lg font-semibold text-slate-800">Thống kê theo lớp trong ngành</h3>
           <div className="flex flex-wrap gap-2 text-sm text-slate-600">
-            <select className="rounded-md border border-slate-300 px-3 py-2 shadow-sm">
+            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
               <option>Ngành Chiên</option>
               <option>Ngành Ấu</option>
               <option>Ngành Thiếu</option>
               <option>Ngành Nghĩa</option>
             </select>
-            <select className="rounded-md border border-slate-300 px-3 py-2 shadow-sm">
+            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
               <option>Chủ nhật</option>
               <option>Thứ 5</option>
             </select>
-            <select className="rounded-md border border-slate-300 px-3 py-2 shadow-sm">
+            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
               <option>19/01/2026</option>
               <option>26/01/2026</option>
               <option>02/02/2026</option>

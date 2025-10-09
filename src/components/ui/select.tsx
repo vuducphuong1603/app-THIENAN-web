@@ -18,7 +18,7 @@ export function Select({ label, error, helperText, options, className, ...props 
       )}
       <select
         className={clsx(
-          "w-full rounded-lg border px-3 py-2 text-sm transition-colors",
+          "w-full rounded-lg border px-3 py-2 text-sm text-slate-900 transition-colors",
           "focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20",
           error ? "border-red-300" : "border-slate-300",
           props.disabled && "bg-slate-50 cursor-not-allowed",

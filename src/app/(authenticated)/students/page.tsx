@@ -234,14 +234,14 @@ export default function StudentsPage() {
             <input
               type="text"
               placeholder="Tìm theo tên, mã TN..."
-              className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={selectedClass}
             onChange={(e) => setSelectedClass(e.target.value)}
           >
@@ -254,7 +254,7 @@ export default function StudentsPage() {
           </select>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as StudentStatus | "ALL")}
           >
@@ -336,7 +336,7 @@ export default function StudentsPage() {
                           step="0.1"
                           min="0"
                           max="10"
-                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm"
+                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm text-slate-900"
                           value={gradeEdits.semester_1_45min}
                           onChange={(e) => setGradeEdits({ ...gradeEdits, semester_1_45min: e.target.value })}
                         />
@@ -347,7 +347,7 @@ export default function StudentsPage() {
                           step="0.1"
                           min="0"
                           max="10"
-                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm"
+                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm text-slate-900"
                           value={gradeEdits.semester_1_exam}
                           onChange={(e) => setGradeEdits({ ...gradeEdits, semester_1_exam: e.target.value })}
                         />
@@ -358,7 +358,7 @@ export default function StudentsPage() {
                           step="0.1"
                           min="0"
                           max="10"
-                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm"
+                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm text-slate-900"
                           value={gradeEdits.semester_2_45min}
                           onChange={(e) => setGradeEdits({ ...gradeEdits, semester_2_45min: e.target.value })}
                         />
@@ -369,7 +369,7 @@ export default function StudentsPage() {
                           step="0.1"
                           min="0"
                           max="10"
-                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm"
+                          className="w-16 rounded border border-slate-300 px-2 py-1 text-center text-sm text-slate-900"
                           value={gradeEdits.semester_2_exam}
                           onChange={(e) => setGradeEdits({ ...gradeEdits, semester_2_exam: e.target.value })}
                         />

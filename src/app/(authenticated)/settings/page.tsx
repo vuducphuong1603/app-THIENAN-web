@@ -35,11 +35,11 @@ export default function SettingsPage() {
 
         {activeTab === "profile" && (
           <div className="grid gap-3 md:grid-cols-2">
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Tên thánh" />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Họ và tên" />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Số điện thoại" />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Vai trò" disabled />
-            <textarea className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2" rows={3} placeholder="Địa chỉ" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Tên thánh" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Họ và tên" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Số điện thoại" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Vai trò" disabled />
+            <textarea className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 md:col-span-2" rows={3} placeholder="Địa chỉ" />
             <div className="md:col-span-2 flex justify-end">
               <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Lưu thông tin</button>
             </div>
@@ -48,10 +48,10 @@ export default function SettingsPage() {
 
         {activeTab === "password" && (
           <div className="grid gap-3 md:grid-cols-2">
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Mật khẩu hiện tại" type="password" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Mật khẩu hiện tại" type="password" />
             <div />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Mật khẩu mới" type="password" />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Nhập lại mật khẩu" type="password" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Mật khẩu mới" type="password" />
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Nhập lại mật khẩu" type="password" />
             <div className="md:col-span-2 flex justify-end">
               <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Đổi mật khẩu</button>
             </div>
@@ -61,8 +61,8 @@ export default function SettingsPage() {
         {activeTab === "academic" && (
           <div className="space-y-3">
             <div className="grid gap-3 md:grid-cols-2">
-              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Năm học hiện tại" />
-              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Tổng số tuần" />
+              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Năm học hiện tại" />
+              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Tổng số tuần" />
             </div>
             <table className="w-full table-auto overflow-hidden rounded-lg border text-sm">
               <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">

@@ -169,7 +169,7 @@ export default function UsersPage() {
               <input
                 type="text"
                 placeholder="Tìm theo tên, username, SĐT..."
-                className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                className="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-3 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -185,7 +185,7 @@ export default function UsersPage() {
           </button>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={roleFilter}
             onChange={(e) => setRoleFilter(e.target.value)}
           >
@@ -198,7 +198,7 @@ export default function UsersPage() {
           </select>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={sectorFilter}
             onChange={(e) => {
               setSectorFilter(e.target.value);
@@ -214,7 +214,7 @@ export default function UsersPage() {
           </select>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={classFilter}
             onChange={(e) => setClassFilter(e.target.value)}
             disabled={!sectorFilter}
