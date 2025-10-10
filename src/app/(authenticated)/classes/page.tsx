@@ -1,107 +1,386 @@
 "use client";
 
-import { Plus, Search, Trash2, Users, Eye } from "lucide-react";
+import { Plus, Search, Trash2, Users, Eye, Loader2, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import type { ClassWithTeachers, Sector, TeacherAssignment } from "@/types/database";
+import { useAuth } from "@/providers/auth-provider";
 
-// Mock data - replace with actual API calls
-const mockClasses: ClassWithTeachers[] = [
-  {
-    id: "class-1",
-    name: "Chiên 1",
-    sector: "CHIÊN",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-    student_count: 28,
-    teachers: [
-      {
-        id: "ta-1",
-        class_id: "class-1",
-        teacher_id: "teacher-1",
-        is_primary: true,
-        teacher: {
-          id: "teacher-1",
-          saint_name: "Phêrô",
-          full_name: "Nguyễn Văn C",
-          phone: "0901234567",
-        },
-      },
-    ],
-  },
-  {
-    id: "class-2",
-    name: "Chiên 2",
-    sector: "CHIÊN",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-    student_count: 27,
-    teachers: [
-      {
-        id: "ta-2",
-        class_id: "class-2",
-        teacher_id: "teacher-2",
-        is_primary: true,
-        teacher: {
-          id: "teacher-2",
-          saint_name: "Maria",
-          full_name: "Lê Thị D",
-          phone: "0902345678",
-        },
-      },
-    ],
-  },
-  {
-    id: "class-3",
-    name: "Ấu 1",
-    sector: "ẤU",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-    student_count: 30,
-    teachers: [
-      {
-        id: "ta-3",
-        class_id: "class-3",
-        teacher_id: "teacher-3",
-        is_primary: true,
-        teacher: {
-          id: "teacher-3",
-          saint_name: "Giuse",
-          full_name: "Nguyễn Văn E",
-          phone: "0903456789",
-        },
-      },
-    ],
-  },
-];
+type ClassRow = {
+  id: string;
+  name?: string | null;
+  sector_id?: number | null;
+  sector?: string | null;
+  sector_code?: string | null;
+  sector_name?: string | null;
+  branch?: string | null;
+  branch_code?: string | null;
+  branch_name?: string | null;
+  code?: string | null;
+};
 
-const availableTeachers = [
-  {
-    id: "teacher-4",
-    saint_name: "Anna",
-    full_name: "Võ Thị F",
-    phone: "0904567890",
-    current_class: "Chiên 1",
-    is_primary: false,
-  },
-  {
-    id: "teacher-5",
-    saint_name: "Têrêsa",
-    full_name: "Trần Thị G",
-    phone: "0905678901",
-    current_class: null,
-    is_primary: false,
-  },
-];
+type SectorRow = {
+  id: number;
+  name: string | null;
+  code: string | null;
+};
+
+type TeacherRow = {
+  id: string;
+  saint_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  phone: string | null;
+  class_id?: string | null;
+  class_name: string | null;
+  class_code: string | null;
+  sector: string | null;
+};
+
+type StudentRow = {
+  id: string;
+  class_id: string | null;
+};
+
+type AvailableTeacher = {
+  id: string;
+  saint_name: string | null;
+  full_name: string;
+  phone: string;
+  current_class: string | null;
+  is_primary: boolean;
+};
+
+const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
+
+const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
+  CHIEN: "CHIÊN",
+  AU: "ẤU",
+  THIEU: "THIẾU",
+  NGHIA: "NGHĨA",
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+}
+
+function isIgnorableSupabaseError(error?: { code?: string }) {
+  if (!error?.code) {
+    return false;
+  }
+  return SUPABASE_IGNORED_ERROR_CODES.has(error.code);
+}
+
+function tryResolveSector(value?: string | null): Sector | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizeText(value);
+  const direct = SECTOR_CODE_TO_LABEL[normalized];
+  if (direct) {
+    return direct;
+  }
+  if (normalized.includes("CHIEN")) return "CHIÊN";
+  if (normalized.includes("NGHIA")) return "NGHĨA";
+  if (normalized.includes("THIEU")) return "THIẾU";
+  if (normalized.includes("AU")) return "ẤU";
+  return null;
+}
+
+function resolveSectorFromCandidates(...candidates: Array<string | null | undefined>): Sector {
+  for (const candidate of candidates) {
+    const resolved = tryResolveSector(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return "CHIÊN";
+}
+
+function mapSector(code?: string | null, fallbackName?: string | null): Sector {
+  return resolveSectorFromCandidates(code, fallbackName);
+}
+
+function resolveTeacherName(teacher: TeacherRow) {
+  if (teacher.full_name) return teacher.full_name;
+  const parts = [teacher.last_name, teacher.first_name].filter(Boolean);
+  return parts.join(" ").trim();
+}
 
 export default function ClassesPage() {
   const router = useRouter();
-  const [classes] = useState<ClassWithTeachers[]>(mockClasses);
+  const { supabase } = useAuth();
+
+  const {
+    data: classRows = [],
+    isLoading: isLoadingClasses,
+    error: classesError,
+  } = useQuery({
+    queryKey: ["classes", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("classes").select("*");
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase classes query fallback:", error.message);
+          return [] as ClassRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as ClassRow[] | null) ?? [];
+    },
+  });
+
+  const {
+    data: sectorRows = [],
+    isLoading: isLoadingSectors,
+    error: sectorsError,
+  } = useQuery({
+    queryKey: ["sectors", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sectors").select("id, name, code");
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase sectors query fallback:", error.message);
+          return [] as SectorRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as SectorRow[] | null) ?? [];
+    },
+  });
+
+  const {
+    data: teacherRows = [],
+    isLoading: isLoadingTeachers,
+    error: teachersError,
+  } = useQuery({
+    queryKey: ["teachers", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("teachers").select("*");
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase teachers query fallback:", error.message);
+          return [] as TeacherRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as TeacherRow[] | null) ?? [];
+    },
+  });
+
+  const {
+    data: studentRows = [],
+    isLoading: isLoadingStudents,
+    error: studentsError,
+  } = useQuery({
+    queryKey: ["students", "classCounts"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("students").select("id, class_id");
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase students query fallback:", error.message);
+          return [] as StudentRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as StudentRow[] | null) ?? [];
+    },
+  });
+
+  const { classes, availableTeachers } = useMemo(() => {
+    const classNameById = new Map<string, string>();
+    classRows.forEach((cls) => {
+      const trimmedName = cls.name?.trim();
+      const trimmedCode = cls.code?.toString().trim();
+      const displayName =
+        (trimmedName && trimmedName.length > 0 ? trimmedName : null) ??
+        (trimmedCode && trimmedCode.length > 0 ? trimmedCode : null) ??
+        cls.id;
+      classNameById.set(cls.id, displayName);
+    });
+
+    const sortedTeachers = [...teacherRows].sort((a, b) =>
+      resolveTeacherName(a).localeCompare(resolveTeacherName(b)),
+    );
+
+    const resolvedAvailableTeachers: AvailableTeacher[] = sortedTeachers.map((teacher) => {
+      const mappedClassName =
+        teacher.class_name ??
+        (teacher.class_id ? classNameById.get(teacher.class_id) ?? null : null) ??
+        (teacher.class_code ?? null);
+
+      return {
+        id: teacher.id,
+        saint_name: teacher.saint_name,
+        full_name: resolveTeacherName(teacher),
+        phone: teacher.phone ?? "",
+        current_class: mappedClassName,
+        is_primary: false,
+      };
+    });
+
+    if (!classRows.length) {
+      return { classes: [] as ClassWithTeachers[], availableTeachers: resolvedAvailableTeachers };
+    }
+
+    const sectorById = new Map<number, Sector>();
+    sectorRows.forEach((sector) => {
+      sectorById.set(sector.id, mapSector(sector.code, sector.name));
+    });
+
+    const classStudentCount = new Map<string, number>();
+    studentRows.forEach((student) => {
+      if (!student.class_id) return;
+      classStudentCount.set(student.class_id, (classStudentCount.get(student.class_id) ?? 0) + 1);
+    });
+
+    const teacherMapByClassId = new Map<string, TeacherRow[]>();
+    const teacherMapByKey = new Map<string, TeacherRow[]>();
+
+    sortedTeachers.forEach((teacher) => {
+      if (teacher.class_id) {
+        const key = teacher.class_id;
+        if (!teacherMapByClassId.has(key)) {
+          teacherMapByClassId.set(key, []);
+        }
+        teacherMapByClassId.get(key)!.push(teacher);
+      }
+
+      const keys = new Set<string>();
+      if (teacher.class_name) {
+        keys.add(normalizeText(teacher.class_name));
+      }
+      if (teacher.class_code) {
+        keys.add(normalizeText(teacher.class_code));
+      }
+      if (teacher.class_id) {
+        keys.add(normalizeText(teacher.class_id));
+      }
+
+      keys.forEach((key) => {
+        if (!key) return;
+        if (!teacherMapByKey.has(key)) {
+          teacherMapByKey.set(key, []);
+        }
+        teacherMapByKey.get(key)!.push(teacher);
+      });
+    });
+
+    const sectorOrder: Record<Sector, number> = {
+      "CHIÊN": 0,
+      "ẤU": 1,
+      "THIẾU": 2,
+      "NGHĨA": 3,
+    };
+
+    const classesWithTeachers: ClassWithTeachers[] = classRows.map((cls) => {
+      const displayName = classNameById.get(cls.id) ?? cls.id;
+
+      const sectorFromMap =
+        typeof cls.sector_id === "number" && cls.sector_id !== null
+          ? sectorById.get(cls.sector_id)
+          : undefined;
+
+      const sector = sectorFromMap
+        ?? resolveSectorFromCandidates(
+          cls.sector_code,
+          cls.sector_name,
+          cls.sector,
+          cls.branch_code,
+          cls.branch_name,
+          cls.branch,
+          cls.name,
+          cls.code,
+        );
+
+      const matchingKeys = new Set<string>();
+      if (cls.name) {
+        matchingKeys.add(normalizeText(cls.name));
+      }
+      if (cls.code) {
+        matchingKeys.add(normalizeText(cls.code));
+      }
+      matchingKeys.add(normalizeText(cls.id));
+
+      const matchedTeacherIds = new Set<string>();
+      const orderedTeachers: TeacherRow[] = [];
+
+      const directMatches = teacherMapByClassId.get(cls.id) ?? [];
+      directMatches.forEach((teacher) => {
+        if (teacher.id && !matchedTeacherIds.has(teacher.id)) {
+          matchedTeacherIds.add(teacher.id);
+          orderedTeachers.push(teacher);
+        }
+      });
+
+      const fuzzyMatches: TeacherRow[] = [];
+      matchingKeys.forEach((key) => {
+        if (!key) return;
+        const teachersForKey = teacherMapByKey.get(key) ?? [];
+        teachersForKey.forEach((teacher) => {
+          if (teacher.id && !matchedTeacherIds.has(teacher.id)) {
+            matchedTeacherIds.add(teacher.id);
+            fuzzyMatches.push(teacher);
+          }
+        });
+      });
+
+      fuzzyMatches.sort((a, b) => resolveTeacherName(a).localeCompare(resolveTeacherName(b)));
+      orderedTeachers.push(...fuzzyMatches);
+
+      const teacherAssignments: TeacherAssignment[] = orderedTeachers.map((teacher, index) => ({
+        id: `${teacher.id}-${cls.id}`,
+        class_id: cls.id,
+        teacher_id: teacher.id,
+        is_primary: index === 0,
+        teacher: {
+          id: teacher.id,
+          saint_name: teacher.saint_name,
+          full_name: resolveTeacherName(teacher),
+          phone: teacher.phone ?? "",
+        },
+      }));
+
+      return {
+        id: cls.id,
+        name: displayName,
+        sector,
+        created_at: "",
+        updated_at: "",
+        student_count: classStudentCount.get(cls.id) ?? 0,
+        teachers: teacherAssignments,
+      };
+    });
+
+    const sortedClasses = classesWithTeachers.sort((a, b) => {
+      const sectorDiff = sectorOrder[a.sector] - sectorOrder[b.sector];
+      if (sectorDiff !== 0) {
+        return sectorDiff;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
+    return { classes: sortedClasses, availableTeachers: resolvedAvailableTeachers };
+  }, [classRows, sectorRows, studentRows, teacherRows]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [sectorFilter, setSectorFilter] = useState("");
 
@@ -118,6 +397,13 @@ export default function ClassesPage() {
   const [assignedTeachers, setAssignedTeachers] = useState<TeacherAssignment[]>([]);
 
   const sectors: Sector[] = ["CHIÊN", "ẤU", "THIẾU", "NGHĨA"];
+
+  const isLoadingData = isLoadingClasses || isLoadingSectors || isLoadingTeachers || isLoadingStudents;
+  const queryError =
+    (classesError as Error | null) ||
+    (sectorsError as Error | null) ||
+    (teachersError as Error | null) ||
+    (studentsError as Error | null);
 
   const filteredClasses = classes.filter((cls) => {
     const matchesSearch = cls.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -200,6 +486,20 @@ export default function ClassesPage() {
         <h2 className="text-2xl font-semibold text-slate-900">Quản lý lớp học</h2>
         <p className="text-sm text-slate-500">Xem tổng quan, chỉnh sửa và phân công giáo lý viên.</p>
       </header>
+
+      {isLoadingData && (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+          Đang tải dữ liệu lớp học từ Supabase...
+        </div>
+      )}
+
+      {queryError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4" />
+          Không thể tải dữ liệu lớp học: {queryError.message}
+        </div>
+      )}
 
       <Card>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

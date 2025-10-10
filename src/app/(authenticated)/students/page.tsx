@@ -1,63 +1,281 @@
 "use client";
 
-import { Edit, Save, Search, Trash2, Upload, UserPlus, X } from "lucide-react";
+import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
+import { useAuth } from "@/providers/auth-provider";
 import type { Sector, StudentStatus, StudentWithGrades } from "@/types/database";
 
-const mockClasses = [
-  { id: "class-1", name: "Chiên 1", sector: "CHIÊN" as Sector },
-  { id: "class-2", name: "Chiên 2", sector: "CHIÊN" as Sector },
-  { id: "class-3", name: "Thiếu 1", sector: "THIẾU" as Sector },
-];
+type ClassRow = {
+  id: string;
+  name?: string | null;
+  sector_id?: number | null;
+  sector?: string | null;
+  sector_code?: string | null;
+  sector_name?: string | null;
+  branch?: string | null;
+  branch_code?: string | null;
+  branch_name?: string | null;
+  code?: string | null;
+};
 
-const mockStudents: StudentWithGrades[] = [
-  {
-    id: "s1",
-    student_code: "TN2025001",
-    class_id: "class-1",
-    saint_name: "Phêrô",
-    full_name: "Nguyễn Văn A",
-    date_of_birth: "2015-05-15",
-    phone: "0911111111",
-    parent_phone_1: "0912222222",
-    parent_phone_2: "0913333333",
-    address: "123 ABC",
-    notes: null,
-    status: "ACTIVE",
-    created_at: "2024-01-01",
-    updated_at: "2024-01-01",
-    class_name: "Chiên 1",
-    sector: "CHIÊN",
-    grades: {
-      semester_1_45min: 8.5,
-      semester_1_exam: 9.0,
-      semester_2_45min: 8.0,
-      semester_2_exam: 8.5,
-      catechism_avg: 8.5,
-      attendance_avg: 9.2,
-      total_avg: 9.0,
-    },
-    attendance_stats: {
-      thursday_count: 15,
-      sunday_count: 18,
-      thursday_score: 9.0,
-      sunday_score: 9.5,
-      attendance_score: 9.3,
-    },
-  },
-];
+type SectorRow = {
+  id: number;
+  name: string | null;
+  code: string | null;
+};
+
+type StudentRow = {
+  id: string;
+  class_id?: string | null;
+  saint_name?: string | null;
+  full_name?: string | null;
+  code?: string | null;
+  student_code?: string | null;
+  date_of_birth?: string | null;
+  phone?: string | null;
+  parent_phone1?: string | null;
+  parent_phone2?: string | null;
+  parent_phone_1?: string | null;
+  parent_phone_2?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  academic_hk1_fortyfive?: number | string | null;
+  academic_hk1_exam?: number | string | null;
+  academic_hk2_fortyfive?: number | string | null;
+  academic_hk2_exam?: number | string | null;
+  attendance_hk1_present?: number | string | null;
+  attendance_hk1_total?: number | string | null;
+  attendance_hk2_present?: number | string | null;
+  attendance_hk2_total?: number | string | null;
+  attendance_thursday_present?: number | string | null;
+  attendance_thursday_total?: number | string | null;
+  attendance_sunday_present?: number | string | null;
+  attendance_sunday_total?: number | string | null;
+};
+
+const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
+
+const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
+  CHIEN: "CHIÊN",
+  AU: "ẤU",
+  THIEU: "THIẾU",
+  NGHIA: "NGHĨA",
+};
+
+const SECTOR_ORDER: Record<Sector, number> = {
+  "CHIÊN": 0,
+  "ẤU": 1,
+  "THIẾU": 2,
+  "NGHĨA": 3,
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+}
+
+function isIgnorableSupabaseError(error?: { code?: string }) {
+  if (!error?.code) {
+    return false;
+  }
+  return SUPABASE_IGNORED_ERROR_CODES.has(error.code);
+}
+
+function tryResolveSector(value?: string | null): Sector | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = normalizeText(value);
+  const direct = SECTOR_CODE_TO_LABEL[normalized];
+  if (direct) {
+    return direct;
+  }
+  if (normalized.includes("CHIEN")) return "CHIÊN";
+  if (normalized.includes("NGHIA")) return "NGHĨA";
+  if (normalized.includes("THIEU")) return "THIẾU";
+  if (normalized.includes("AU")) return "ẤU";
+  return null;
+}
+
+function resolveSectorFromCandidates(...candidates: Array<string | null | undefined>): Sector {
+  for (const candidate of candidates) {
+    const resolved = tryResolveSector(candidate);
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return "CHIÊN";
+}
+
+function mapSector(code?: string | null, fallbackName?: string | null): Sector {
+  return resolveSectorFromCandidates(code, fallbackName);
+}
+
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function calculateAttendanceScore(present?: number | null, total?: number | null) {
+  if (!present || !total || total === 0) return null;
+  return Number(((present / total) * 10).toFixed(2));
+}
+
+function calculateAttendanceAverage(
+  hk1Present?: number | null,
+  hk1Total?: number | null,
+  hk2Present?: number | null,
+  hk2Total?: number | null,
+) {
+  const totalSessions = (hk1Total ?? 0) + (hk2Total ?? 0);
+  const totalPresent = (hk1Present ?? 0) + (hk2Present ?? 0);
+  if (totalSessions === 0) return null;
+  return Number(((totalPresent / totalSessions) * 10).toFixed(2));
+}
 
 export default function StudentsPage() {
   const searchParams = useSearchParams();
   const classFilter = searchParams?.get("class") || "";
+  const { supabase } = useAuth();
 
-  const [students, setStudents] = useState<StudentWithGrades[]>(mockStudents);
+  const {
+    data: sectorRows = [],
+    isLoading: isLoadingSectors,
+    error: sectorsError,
+  } = useQuery({
+    queryKey: ["sectors", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("sectors").select("id, name, code");
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase sectors query fallback:", error.message);
+          return [] as SectorRow[];
+        }
+        throw new Error(error.message);
+      }
+      return (data as SectorRow[] | null) ?? [];
+    },
+  });
+
+  const sectorById = useMemo(() => {
+    const map = new Map<number, Sector>();
+    sectorRows.forEach((sector) => {
+      map.set(sector.id, mapSector(sector.code, sector.name));
+    });
+    return map;
+  }, [sectorRows]);
+
+  const {
+    data: classRows = [],
+    isLoading: isLoadingClasses,
+    error: classesError,
+  } = useQuery({
+    queryKey: ["classes", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("classes").select("*");
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase classes query fallback:", error.message);
+          return [] as ClassRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as ClassRow[] | null) ?? [];
+    },
+  });
+
+  const classOptions = useMemo(() => {
+    return classRows
+      .map((cls) => {
+        const trimmedName = cls.name?.trim();
+        const trimmedCode = cls.code?.toString().trim();
+        const name =
+          (trimmedName && trimmedName.length > 0 ? trimmedName : null) ??
+          (trimmedCode && trimmedCode.length > 0 ? trimmedCode : null) ??
+          cls.id;
+
+        const sectorFromMap =
+          typeof cls.sector_id === "number" && cls.sector_id !== null
+            ? sectorById.get(cls.sector_id) ?? null
+            : null;
+
+        const sector =
+          sectorFromMap ??
+          resolveSectorFromCandidates(
+            cls.sector_code,
+            cls.sector_name,
+            cls.sector,
+            cls.branch_code,
+            cls.branch_name,
+            cls.branch,
+            cls.name,
+            cls.code,
+          );
+
+        return {
+          id: cls.id,
+          name,
+          sector,
+        };
+      })
+      .sort((a, b) => {
+        const sectorDiff = SECTOR_ORDER[a.sector] - SECTOR_ORDER[b.sector];
+        if (sectorDiff !== 0) {
+          return sectorDiff;
+        }
+        return a.name.localeCompare(b.name);
+      });
+  }, [classRows, sectorById]);
+
+  const classMap = useMemo(() => {
+    const map = new Map<string, { name: string; sector: Sector }>();
+    classOptions.forEach((cls) => {
+      map.set(cls.id, { name: cls.name, sector: cls.sector });
+    });
+    return map;
+  }, [classOptions]);
+
+  const {
+    data: studentRows = [],
+    isLoading: isLoadingStudents,
+    error: studentsError,
+  } = useQuery({
+    queryKey: ["students", "list"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("students").select("*");
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase students query fallback:", error.message);
+          return [] as StudentRow[];
+        }
+        throw new Error(error.message);
+      }
+
+      return (data as StudentRow[] | null) ?? [];
+    },
+  });
+
+  const [students, setStudents] = useState<StudentWithGrades[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState(classFilter);
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "ALL">("ACTIVE");
@@ -92,6 +310,116 @@ export default function StudentsPage() {
     semester_2_exam: "",
   });
 
+  const isLoadingData = isLoadingSectors || isLoadingClasses || isLoadingStudents;
+  const queryError =
+    (sectorsError as Error | null) || (classesError as Error | null) || (studentsError as Error | null);
+
+  useEffect(() => {
+    if (!studentRows.length) {
+      setStudents([]);
+      return;
+    }
+
+    const collator = new Intl.Collator("vi", { sensitivity: "base" });
+
+    const transformed: StudentWithGrades[] = studentRows.map((student) => {
+      const classInfo = student.class_id ? classMap.get(student.class_id) : undefined;
+
+      const semester145 = toNumberOrNull(student.academic_hk1_fortyfive);
+      const semester1Exam = toNumberOrNull(student.academic_hk1_exam);
+      const semester245 = toNumberOrNull(student.academic_hk2_fortyfive);
+      const semester2Exam = toNumberOrNull(student.academic_hk2_exam);
+
+      const catechismAvg = calculateCatechismAvg(semester145, semester1Exam, semester245, semester2Exam);
+
+      const hk1Present =
+        toNumberOrNull(student.attendance_hk1_present) ??
+        toNumberOrNull(student.attendance_thursday_present);
+      const hk1Total =
+        toNumberOrNull(student.attendance_hk1_total) ??
+        toNumberOrNull(student.attendance_thursday_total);
+      const hk2Present =
+        toNumberOrNull(student.attendance_hk2_present) ??
+        toNumberOrNull(student.attendance_sunday_present);
+      const hk2Total =
+        toNumberOrNull(student.attendance_hk2_total) ??
+        toNumberOrNull(student.attendance_sunday_total);
+
+      const attendanceThursdayScore = calculateAttendanceScore(
+        hk1Present,
+        hk1Total,
+      );
+      const attendanceSundayScore = calculateAttendanceScore(
+        hk2Present,
+        hk2Total,
+      );
+      const attendanceAvg = calculateAttendanceAverage(
+        hk1Present,
+        hk1Total,
+        hk2Present,
+        hk2Total,
+      );
+
+      const totalAvg =
+        catechismAvg !== null || attendanceAvg !== null
+          ? Number(((catechismAvg ?? 0) * 0.6 + (attendanceAvg ?? 0) * 0.4).toFixed(2))
+          : null;
+
+      const studentCode = student.student_code ?? student.code ?? "";
+      const saintName = student.saint_name ?? "";
+      const fullName = student.full_name ?? "";
+      const parentPhone1 = student.parent_phone1 ?? student.parent_phone_1 ?? "";
+      const parentPhone2 = student.parent_phone2 ?? student.parent_phone_2 ?? "";
+      const address = student.address ?? "";
+      const notes = student.notes ?? null;
+
+      return {
+        id: student.id,
+        student_code: studentCode,
+        class_id: student.class_id ?? "",
+        saint_name: saintName,
+        full_name: fullName,
+        date_of_birth: student.date_of_birth ?? "",
+        phone: student.phone ?? "",
+        parent_phone_1: parentPhone1,
+        parent_phone_2: parentPhone2,
+        address,
+        notes,
+        status: "ACTIVE",
+        created_at: "",
+        updated_at: "",
+        class_name: classInfo?.name ?? "Chưa phân lớp",
+        sector: classInfo?.sector ?? "CHIÊN",
+        grades: {
+          semester_1_45min: semester145,
+          semester_1_exam: semester1Exam,
+          semester_2_45min: semester245,
+          semester_2_exam: semester2Exam,
+          catechism_avg: catechismAvg,
+          attendance_avg: attendanceAvg,
+          total_avg: totalAvg,
+        },
+        attendance_stats: {
+          thursday_count: hk1Present ?? 0,
+          sunday_count: hk2Present ?? 0,
+          thursday_score: attendanceThursdayScore,
+          sunday_score: attendanceSundayScore,
+          attendance_score: attendanceAvg,
+        },
+      };
+    });
+
+    transformed.sort((a, b) => {
+      const nameComparison = collator.compare(a.full_name, b.full_name);
+      if (nameComparison !== 0) {
+        return nameComparison;
+      }
+      return a.student_code.localeCompare(b.student_code);
+    });
+
+    setStudents(transformed);
+  }, [studentRows, classMap]);
+
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
       student.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -102,6 +430,7 @@ export default function StudentsPage() {
   });
 
   const calculateAge = (dob: string) => {
+    if (!dob) return "-";
     const birthDate = new Date(dob);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
@@ -208,10 +537,7 @@ export default function StudentsPage() {
     }
   };
 
-  const getClassName = (classId: string) => {
-    const cls = mockClasses.find((c) => c.id === classId);
-    return cls?.name || "N/A";
-  };
+  const getClassName = (classId: string) => classMap.get(classId)?.name || "N/A";
 
   const predictedAvg = calculateCatechismAvg(
     formData.semester_1_45min ? parseFloat(formData.semester_1_45min) : null,
@@ -226,6 +552,20 @@ export default function StudentsPage() {
         <h2 className="text-2xl font-semibold text-slate-900">Quản lý thiếu nhi</h2>
         <p className="text-sm text-slate-500">Theo dõi thông tin, điểm số và điểm danh của từng thiếu nhi.</p>
       </header>
+
+      {isLoadingData && (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
+          Đang tải dữ liệu thiếu nhi từ Supabase...
+        </div>
+      )}
+
+      {queryError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4" />
+          Không thể tải dữ liệu thiếu nhi: {queryError.message}
+        </div>
+      )}
 
       <Card>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -246,7 +586,7 @@ export default function StudentsPage() {
             onChange={(e) => setSelectedClass(e.target.value)}
           >
             <option value="">Tất cả lớp</option>
-            {mockClasses.map((cls) => (
+            {classOptions.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {cls.name}
               </option>
@@ -304,6 +644,7 @@ export default function StudentsPage() {
           <tbody>
             {filteredStudents.map((student) => {
               const isEditingGrades = editingGradesId === student.id;
+              const age = calculateAge(student.date_of_birth);
               return (
                 <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
                   <td className="p-3">
@@ -318,7 +659,7 @@ export default function StudentsPage() {
                   <td className="p-3">
                     <div>
                       <p className="text-slate-700">{getClassName(student.class_id)}</p>
-                      <p className="text-xs text-slate-500">{calculateAge(student.date_of_birth)} tuổi</p>
+                      <p className="text-xs text-slate-500">{typeof age === "number" ? `${age} tuổi` : "-"}</p>
                     </div>
                   </td>
                   <td className="p-3">
@@ -378,34 +719,40 @@ export default function StudentsPage() {
                   ) : (
                     <>
                       <td className="p-3 text-center text-slate-700">
-                        {student.grades.semester_1_45min?.toFixed(1) || "-"}
+                        {student.grades.semester_1_45min != null
+                          ? student.grades.semester_1_45min.toFixed(1)
+                          : "-"}
                       </td>
                       <td className="p-3 text-center text-slate-700">
-                        {student.grades.semester_1_exam?.toFixed(1) || "-"}
+                        {student.grades.semester_1_exam != null ? student.grades.semester_1_exam.toFixed(1) : "-"}
                       </td>
                       <td className="p-3 text-center text-slate-700">
-                        {student.grades.semester_2_45min?.toFixed(1) || "-"}
+                        {student.grades.semester_2_45min != null
+                          ? student.grades.semester_2_45min.toFixed(1)
+                          : "-"}
                       </td>
                       <td className="p-3 text-center text-slate-700">
-                        {student.grades.semester_2_exam?.toFixed(1) || "-"}
+                        {student.grades.semester_2_exam != null ? student.grades.semester_2_exam.toFixed(1) : "-"}
                       </td>
                     </>
                   )}
 
                   <td className="p-3 text-center font-semibold text-emerald-700">
-                    {student.grades.catechism_avg?.toFixed(2) || "-"}
+                    {student.grades.catechism_avg != null ? student.grades.catechism_avg.toFixed(2) : "-"}
                   </td>
                   <td className="p-3 text-center text-slate-600">
-                    {student.attendance_stats.thursday_count} ({student.attendance_stats.thursday_score?.toFixed(1) || "-"})
+                    {student.attendance_stats.thursday_count} (
+                    {student.attendance_stats.thursday_score?.toFixed(1) || "-"})
                   </td>
                   <td className="p-3 text-center text-slate-600">
-                    {student.attendance_stats.sunday_count} ({student.attendance_stats.sunday_score?.toFixed(1) || "-"})
+                    {student.attendance_stats.sunday_count} (
+                    {student.attendance_stats.sunday_score?.toFixed(1) || "-"})
                   </td>
                   <td className="p-3 text-center font-semibold text-blue-700">
-                    {student.grades.attendance_avg?.toFixed(2) || "-"}
+                    {student.grades.attendance_avg != null ? student.grades.attendance_avg.toFixed(2) : "-"}
                   </td>
                   <td className="p-3 text-center font-bold text-slate-900">
-                    {student.grades.total_avg?.toFixed(2) || "-"}
+                    {student.grades.total_avg != null ? student.grades.total_avg.toFixed(2) : "-"}
                   </td>
 
                   <td className="p-3">
@@ -485,7 +832,7 @@ export default function StudentsPage() {
                 label="Lớp"
                 options={[
                   { value: "", label: "Chọn lớp" },
-                  ...mockClasses.map((c) => ({ value: c.id, label: c.name })),
+                  ...classOptions.map((c) => ({ value: c.id, label: c.name })),
                 ]}
                 value={formData.class_id}
                 onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
@@ -516,13 +863,13 @@ export default function StudentsPage() {
               />
               <Input
                 label="SĐT phụ huynh 1"
-                placeholder="0912345678"
+                placeholder="0912222222"
                 value={formData.parent_phone_1}
                 onChange={(e) => setFormData({ ...formData, parent_phone_1: e.target.value })}
               />
               <Input
                 label="SĐT phụ huynh 2"
-                placeholder="0912345678"
+                placeholder="0913333333"
                 value={formData.parent_phone_2}
                 onChange={(e) => setFormData({ ...formData, parent_phone_2: e.target.value })}
               />
@@ -602,8 +949,8 @@ export default function StudentsPage() {
               <p className="font-semibold">Lưu ý:</p>
               <ul className="mt-2 list-disc space-y-1 pl-4">
                 <li>Điểm danh và điểm tổng sẽ được tự động tính dựa trên:</li>
-                <li>Điểm điểm danh: từ việc điểm danh thứ 5 và chủ nhật</li>
-                <li>Điểm tổng: Điểm giáo lý × 0.6 + Điểm điểm danh × 4</li>
+                <li>Điểm điểm danh: từ việc điểm danh học kỳ 1 và học kỳ 2</li>
+                <li>Điểm tổng: Điểm giáo lý × 0.6 + Điểm điểm danh × 0.4</li>
               </ul>
             </div>
           </div>
@@ -630,7 +977,13 @@ export default function StudentsPage() {
         </div>
       </Modal>
 
-      <Modal isOpen={showImportModal} onClose={() => setShowImportModal(false)} title="Import thiếu nhi từ Excel" description="Tải lên file Excel với danh sách thiếu nhi" size="md">
+      <Modal
+        isOpen={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        title="Import thiếu nhi từ Excel"
+        description="Tải lên file Excel với danh sách thiếu nhi"
+        size="md"
+      >
         <div className="space-y-4">
           <div className="rounded-lg border-2 border-dashed border-slate-300 p-6 text-center">
             <Upload className="mx-auto h-12 w-12 text-slate-400" />
