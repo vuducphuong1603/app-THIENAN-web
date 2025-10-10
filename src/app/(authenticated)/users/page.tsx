@@ -31,7 +31,7 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
-  const [sectorFilter, setSectorFilter] = useState("");
+  const [sectorFilter, setSectorFilter] = useState<Sector | "">("");
   const [classFilter, setClassFilter] = useState("");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -101,7 +101,10 @@ export default function UsersPage() {
     return matchesSearch && matchesRole && matchesSector && matchesClass;
   });
 
-  const filteredClasses = classes.filter((c) => !sectorFilter || c.sector === sectorFilter);
+  const getClassesBySector = (sector: Sector | "") =>
+    classes.filter((c) => !sector || c.sector === sector);
+  const classesForFilterDropdown = getClassesBySector(sectorFilter);
+  const classesForForm = getClassesBySector(formData.sector);
 
   const handleClearFilters = () => {
     setSearchTerm("");
@@ -318,7 +321,7 @@ export default function UsersPage() {
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={sectorFilter}
             onChange={(e) => {
-              setSectorFilter(e.target.value);
+              setSectorFilter(e.target.value as Sector | "");
               setClassFilter("");
             }}
           >
@@ -337,7 +340,7 @@ export default function UsersPage() {
             disabled={!sectorFilter}
           >
             <option value="">Chọn lớp</option>
-            {filteredClasses.map((cls) => (
+            {classesForFilterDropdown.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {cls.name}
               </option>
@@ -486,7 +489,7 @@ export default function UsersPage() {
             label="Lớp"
             options={[
               { value: "", label: "Chọn lớp" },
-              ...filteredClasses.map((c) => ({ value: c.id, label: c.name })),
+              ...classesForForm.map((c) => ({ value: c.id, label: c.name })),
             ]}
             value={formData.class_id}
             onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
@@ -566,7 +569,7 @@ export default function UsersPage() {
             label="Lớp"
             options={[
               { value: "", label: "Chọn lớp" },
-              ...filteredClasses.map((c) => ({ value: c.id, label: c.name })),
+              ...classesForForm.map((c) => ({ value: c.id, label: c.name })),
             ]}
             value={formData.class_id}
             onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
