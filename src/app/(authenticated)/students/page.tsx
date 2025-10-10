@@ -650,7 +650,7 @@ export default function StudentsPage() {
                   <td className="p-3">
                     <div>
                       <p className="font-semibold text-slate-800">
-                        {student.saint_name ? `Th. ${student.saint_name} ` : ""}
+                        {student.saint_name ? `${student.saint_name} ` : ""}
                         {student.full_name}
                       </p>
                       <p className="text-xs text-slate-500">{student.student_code}</p>

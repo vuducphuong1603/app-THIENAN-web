@@ -472,7 +472,7 @@ export default function ClassesPage() {
   );
 
   const getTeacherName = (teacher: { saint_name?: string | null; full_name: string }) => {
-    return teacher.saint_name ? `Th. ${teacher.saint_name} ${teacher.full_name}` : teacher.full_name;
+    return teacher.saint_name ? `${teacher.saint_name} ${teacher.full_name}` : teacher.full_name;
   };
 
   const getPrimaryTeacher = (teachers: TeacherAssignment[]) => {

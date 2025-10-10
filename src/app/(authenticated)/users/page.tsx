@@ -337,7 +337,7 @@ export default function UsersPage() {
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-semibold text-slate-800">
-                  {user.saint_name ? `Th. ${user.saint_name} ` : ""}
+                  {user.saint_name ? `${user.saint_name} ` : ""}
                   {user.full_name}
                 </h3>
                 <p className="text-sm text-slate-500">{user.phone}</p>
