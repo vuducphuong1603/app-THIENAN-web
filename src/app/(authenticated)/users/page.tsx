@@ -61,6 +61,33 @@ export default function UsersPage() {
     { value: "giao_ly_vien", label: "Giáo lý viên" },
   ];
 
+  const formatLabel = (value: string) => {
+    const normalized = value.trim().toLocaleLowerCase("vi");
+    let result = "";
+    let capitalizeNextLetter = true;
+
+    for (const char of normalized) {
+      const isLetter = /\p{L}/u.test(char);
+      const isDigit = /\d/.test(char);
+
+      if (isLetter && capitalizeNextLetter) {
+        result += char.toLocaleUpperCase("vi");
+        capitalizeNextLetter = false;
+      } else {
+        result += char;
+        if (isLetter) {
+          capitalizeNextLetter = false;
+        }
+      }
+
+      if (isDigit) {
+        capitalizeNextLetter = true;
+      }
+    }
+
+    return result;
+  };
+
   // Load users and classes on mount
   useEffect(() => {
     loadData();
@@ -238,29 +265,29 @@ export default function UsersPage() {
   };
 
   const getSectorLabel = (user: UserWithTeacherData) => {
-    if (user.teacher_sector_label) {
-      return user.teacher_sector_label;
-    }
-    if (user.teacher_sector) {
-      return SECTOR_DISPLAY_LABELS[user.teacher_sector] ?? user.teacher_sector;
-    }
-    return null;
+    const rawLabel =
+      user.teacher_sector_label ||
+      (user.teacher_sector
+        ? SECTOR_DISPLAY_LABELS[user.teacher_sector] ?? user.teacher_sector
+        : null);
+
+    return rawLabel ? formatLabel(rawLabel) : null;
   };
 
   const getClassDisplay = (user: UserWithTeacherData) => {
     if (user.class_name) {
-      return user.class_name;
+      return formatLabel(user.class_name);
     }
 
     if (user.teacher_class_id) {
       const matchedClass = classes.find((cls) => cls.id === user.teacher_class_id);
       if (matchedClass?.name) {
-        return matchedClass.name;
+        return formatLabel(matchedClass.name);
       }
     }
 
     if (user.teacher_class_code) {
-      return user.teacher_class_code;
+      return formatLabel(user.teacher_class_code);
     }
 
     return "Chưa phân công";
@@ -328,7 +355,7 @@ export default function UsersPage() {
             <option value="">Tất cả ngành</option>
             {sectors.map((sector) => (
               <option key={sector} value={sector}>
-                Ngành {sector}
+                Ngành {formatLabel(SECTOR_DISPLAY_LABELS[sector] ?? sector)}
               </option>
             ))}
           </select>
@@ -342,7 +369,7 @@ export default function UsersPage() {
             <option value="">Chọn lớp</option>
             {classesForFilterDropdown.map((cls) => (
               <option key={cls.id} value={cls.id}>
-                {cls.name}
+                {formatLabel(cls.name)}
               </option>
             ))}
           </select>
@@ -478,7 +505,10 @@ export default function UsersPage() {
             label="Ngành"
             options={[
               { value: "", label: "Chọn ngành" },
-              ...sectors.map((s) => ({ value: s, label: `Ngành ${s}` })),
+              ...sectors.map((s) => ({
+                value: s,
+                label: `Ngành ${formatLabel(SECTOR_DISPLAY_LABELS[s] ?? s)}`,
+              })),
             ]}
             value={formData.sector}
             onChange={(e) => {
@@ -489,7 +519,7 @@ export default function UsersPage() {
             label="Lớp"
             options={[
               { value: "", label: "Chọn lớp" },
-              ...classesForForm.map((c) => ({ value: c.id, label: c.name })),
+              ...classesForForm.map((c) => ({ value: c.id, label: formatLabel(c.name) })),
             ]}
             value={formData.class_id}
             onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
@@ -558,7 +588,10 @@ export default function UsersPage() {
             label="Ngành"
             options={[
               { value: "", label: "Chọn ngành" },
-              ...sectors.map((s) => ({ value: s, label: `Ngành ${s}` })),
+              ...sectors.map((s) => ({
+                value: s,
+                label: `Ngành ${formatLabel(SECTOR_DISPLAY_LABELS[s] ?? s)}`,
+              })),
             ]}
             value={formData.sector}
             onChange={(e) => {
@@ -569,7 +602,7 @@ export default function UsersPage() {
             label="Lớp"
             options={[
               { value: "", label: "Chọn lớp" },
-              ...classesForForm.map((c) => ({ value: c.id, label: c.name })),
+              ...classesForForm.map((c) => ({ value: c.id, label: formatLabel(c.name) })),
             ]}
             value={formData.class_id}
             onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
