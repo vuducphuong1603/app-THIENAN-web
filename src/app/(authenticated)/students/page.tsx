@@ -76,6 +76,8 @@ const SECTOR_ORDER: Record<Sector, number> = {
   "NGHĨA": 3,
 };
 
+const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
@@ -119,6 +121,14 @@ function resolveSectorFromCandidates(...candidates: Array<string | null | undefi
 
 function mapSector(code?: string | null, fallbackName?: string | null): Sector {
   return resolveSectorFromCandidates(code, fallbackName);
+}
+
+function sanitizeClassId(value?: string | null) {
+  return (value ?? "").trim();
+}
+
+function normalizeClassId(value?: string | null) {
+  return sanitizeClassId(value).toLowerCase();
 }
 
 function toNumberOrNull(value: unknown): number | null {
@@ -206,6 +216,7 @@ export default function StudentsPage() {
   const classOptions = useMemo(() => {
     return classRows
       .map((cls) => {
+        const id = sanitizeClassId(cls.id);
         const trimmedName = cls.name?.trim();
         const trimmedCode = cls.code?.toString().trim();
         const name =
@@ -232,7 +243,7 @@ export default function StudentsPage() {
           );
 
         return {
-          id: cls.id,
+          id,
           name,
           sector,
         };
@@ -249,7 +260,7 @@ export default function StudentsPage() {
   const classMap = useMemo(() => {
     const map = new Map<string, { name: string; sector: Sector }>();
     classOptions.forEach((cls) => {
-      map.set(cls.id, { name: cls.name, sector: cls.sector });
+      map.set(normalizeClassId(cls.id), { name: cls.name, sector: cls.sector });
     });
     return map;
   }, [classOptions]);
@@ -261,17 +272,34 @@ export default function StudentsPage() {
   } = useQuery({
     queryKey: ["students", "list"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("students").select("*");
+      const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
+      const allRows: StudentRow[] = [];
+      let from = 0;
 
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase students query fallback:", error.message);
-          return [] as StudentRow[];
+      // Fetch every page until Supabase returns less than page size.
+      while (true) {
+        const to = from + pageSize - 1;
+        const { data, error } = await supabase.from("students").select("*").range(from, to);
+
+        if (error) {
+          if (isIgnorableSupabaseError(error)) {
+            console.warn("Supabase students query fallback:", error.message);
+            return [] as StudentRow[];
+          }
+          throw new Error(error.message);
         }
-        throw new Error(error.message);
+
+        const batch = (data as StudentRow[] | null) ?? [];
+        allRows.push(...batch);
+
+        if (batch.length < pageSize) {
+          break;
+        }
+
+        from += pageSize;
       }
 
-      return (data as StudentRow[] | null) ?? [];
+      return allRows;
     },
   });
 
@@ -328,7 +356,8 @@ export default function StudentsPage() {
     const collator = new Intl.Collator("vi", { sensitivity: "base" });
 
     const transformed: StudentWithGrades[] = studentRows.map((student) => {
-      const classInfo = student.class_id ? classMap.get(student.class_id) : undefined;
+      const sanitizedClassId = sanitizeClassId(student.class_id);
+      const classInfo = sanitizedClassId ? classMap.get(normalizeClassId(sanitizedClassId)) : undefined;
 
       const semester145 = toNumberOrNull(student.academic_hk1_fortyfive);
       const semester1Exam = toNumberOrNull(student.academic_hk1_exam);
@@ -381,7 +410,7 @@ export default function StudentsPage() {
       return {
         id: student.id,
         student_code: studentCode,
-        class_id: student.class_id ?? "",
+        class_id: sanitizedClassId,
         saint_name: saintName,
         full_name: fullName,
         date_of_birth: student.date_of_birth ?? "",
@@ -429,7 +458,8 @@ export default function StudentsPage() {
     const matchesSearch =
       student.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.student_code.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesClass = !selectedClass || student.class_id === selectedClass;
+    const matchesClass =
+      !selectedClass || normalizeClassId(student.class_id) === normalizeClassId(selectedClass);
     const matchesStatus = statusFilter === "ALL" || student.status === statusFilter;
     return matchesSearch && matchesClass && matchesStatus;
   });

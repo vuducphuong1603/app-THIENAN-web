@@ -32,19 +32,11 @@ type SectorRow = {
 type ClassRow = {
   id: string;
   name?: string | null;
-  code?: string | null;
   sector_id?: number | null;
-  sector?: string | null;
-  sector_code?: string | null;
-  sector_name?: string | null;
-  branch?: string | null;
-  branch_code?: string | null;
-  branch_name?: string | null;
 };
 
 type StudentRow = {
   id: string;
-  status?: string | null;
   class_id?: string | null;
   academic_hk1_fortyfive?: number | string | null;
   academic_hk1_exam?: number | string | null;
@@ -54,18 +46,13 @@ type StudentRow = {
   attendance_hk1_total?: number | string | null;
   attendance_hk2_present?: number | string | null;
   attendance_hk2_total?: number | string | null;
-  attendance_thursday_present?: number | string | null;
-  attendance_thursday_total?: number | string | null;
-  attendance_sunday_present?: number | string | null;
-  attendance_sunday_total?: number | string | null;
 };
 
-type UserProfileRow = {
+type TeacherRow = {
   id: string;
-  role?: string | null;
-  status?: string | null;
   sector?: string | null;
-  class_id?: string | null;
+  class_code?: string | null;
+  class_name?: string | null;
 };
 
 type SummaryMetrics = {
@@ -88,12 +75,16 @@ type SectorMetrics = {
 
 type SectorMetricsWithOrder = SectorMetrics & { key: string; order: number };
 
+const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
+
 const DEFAULT_SECTOR_IDENTIFIERS: SectorIdentifier[] = [
   { key: "CHIEN", label: "Chiên", order: 0 },
   { key: "AU", label: "Ấu", order: 1 },
   { key: "THIEU", label: "Thiếu", order: 2 },
   { key: "NGHIA", label: "Nghĩa", order: 3 },
 ];
+
+const KNOWN_SECTOR_KEYS = new Set(DEFAULT_SECTOR_IDENTIFIERS.map((identifier) => identifier.key));
 
 function normalizeText(value: string) {
   return value
@@ -215,6 +206,47 @@ function calculateCatechismAverage(
   return Number((sum / 6).toFixed(2));
 }
 
+function sanitizeClassId(value?: string | null) {
+  return (value ?? "").trim();
+}
+
+function normalizeClassId(value?: string | null) {
+  return sanitizeClassId(value).toLowerCase();
+}
+
+async function fetchAllStudents(client: Awaited<ReturnType<typeof createSupabaseServerClient>>) {
+  const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
+  const allRows: StudentRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await client
+      .from("students")
+      .select(
+        "id, class_id, academic_hk1_fortyfive, academic_hk1_exam, academic_hk2_fortyfive, academic_hk2_exam, attendance_hk1_present, attendance_hk1_total, attendance_hk2_present, attendance_hk2_total",
+      )
+      .order("id", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      console.warn("Dashboard students query fallback:", error.message ?? error);
+      break;
+    }
+
+    const batch = (data as StudentRow[] | null) ?? [];
+    allRows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return allRows;
+}
+
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
 
@@ -226,7 +258,6 @@ export default async function DashboardPage() {
     usersCountResult,
     sectorsResult,
     classesResult,
-    studentsResult,
     teachersResult,
   ] = await Promise.all([
     supabase.rpc("dashboard_summary").maybeSingle(),
@@ -235,13 +266,8 @@ export default async function DashboardPage() {
     supabase.from("students").select("id", { count: "exact", head: true }),
     supabase.from("user_profiles").select("id", { count: "exact", head: true }),
     supabase.from("sectors").select("id, name, code"),
-    supabase.from("classes").select(
-      "id, name, code, sector_id, sector, sector_code, sector_name, branch, branch_code, branch_name",
-    ),
-    supabase.from("students").select(
-      "id, status, class_id, academic_hk1_fortyfive, academic_hk1_exam, academic_hk2_fortyfive, academic_hk2_exam, attendance_hk1_present, attendance_hk1_total, attendance_hk2_present, attendance_hk2_total, attendance_thursday_present, attendance_thursday_total, attendance_sunday_present, attendance_sunday_total",
-    ),
-    supabase.from("user_profiles").select("id, role, status, sector, class_id"),
+    supabase.from("classes").select("id, name, sector_id"),
+    supabase.from("teachers").select("id, sector, class_code, class_name"),
   ]);
 
   const summaryData = summaryResult.data as Partial<SummaryMetrics> | null | undefined;
@@ -259,18 +285,13 @@ export default async function DashboardPage() {
     console.warn("Dashboard classes query fallback:", classesResult.error.message ?? classesResult.error);
   }
 
-  const studentRows = studentsResult.error
-    ? []
-    : ((studentsResult.data as StudentRow[] | null | undefined) ?? []);
-  if (studentsResult.error) {
-    console.warn("Dashboard students query fallback:", studentsResult.error.message ?? studentsResult.error);
-  }
+  const studentRows = await fetchAllStudents(supabase);
 
-  const teacherProfiles = teachersResult.error
+  const teacherRows = teachersResult.error
     ? []
-    : ((teachersResult.data as UserProfileRow[] | null | undefined) ?? []);
+    : ((teachersResult.data as TeacherRow[] | null | undefined) ?? []);
   if (teachersResult.error) {
-    console.warn("Dashboard teacher profiles query fallback:", teachersResult.error.message ?? teachersResult.error);
+    console.warn("Dashboard teacher query fallback:", teachersResult.error.message ?? teachersResult.error);
   }
 
   const sectorMeta = new Map<string, SectorMeta>();
@@ -294,29 +315,23 @@ export default async function DashboardPage() {
   const classIdToSectorKey = new Map<string, string>();
 
   classRows.forEach((cls) => {
-    if (!cls.id) return;
+    const classId = sanitizeClassId(cls.id);
+    if (!classId) return;
     let sectorKey: string | null = null;
     if (typeof cls.sector_id === "number" && cls.sector_id !== null) {
       sectorKey = sectorIdToKey.get(cls.sector_id) ?? null;
     }
-    if (!sectorKey) {
-      const identifier = resolveSectorIdentifier(
-        cls.sector_code,
-        cls.sector_name,
-        cls.sector,
-        cls.branch_code,
-        cls.branch_name,
-        cls.branch,
-        cls.name,
-        cls.code,
-      );
-      sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, identifier);
+    const identifierFromName = resolveSectorIdentifier(cls.name);
+    const recognizedIdentifier =
+      identifierFromName && KNOWN_SECTOR_KEYS.has(identifierFromName.key) ? identifierFromName : null;
+    if (!sectorKey && recognizedIdentifier) {
+      sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, recognizedIdentifier);
     }
     if (!sectorKey) {
       return;
     }
     registerSector(sectorMeta, sectorAccumulators, sectorKey);
-    classIdToSectorKey.set(cls.id, sectorKey);
+    classIdToSectorKey.set(normalizeClassId(classId), sectorKey);
     const accumulator = sectorAccumulators.get(sectorKey);
     if (accumulator) {
       accumulator.total_classes += 1;
@@ -324,13 +339,14 @@ export default async function DashboardPage() {
   });
 
   studentRows.forEach((student) => {
-    if (!student || student.status === "DELETED") {
+    if (!student) {
       return;
     }
-    if (!student.class_id) {
+    const classId = sanitizeClassId(student.class_id);
+    if (!classId) {
       return;
     }
-    const sectorKey = classIdToSectorKey.get(student.class_id);
+    const sectorKey = classIdToSectorKey.get(normalizeClassId(classId));
     if (!sectorKey) {
       return;
     }
@@ -343,15 +359,10 @@ export default async function DashboardPage() {
 
     accumulator.total_students += 1;
 
-    const hk1Present =
-      toNumberOrNull(student.attendance_hk1_present) ??
-      toNumberOrNull(student.attendance_thursday_present);
-    const hk1Total =
-      toNumberOrNull(student.attendance_hk1_total) ?? toNumberOrNull(student.attendance_thursday_total);
-    const hk2Present =
-      toNumberOrNull(student.attendance_hk2_present) ?? toNumberOrNull(student.attendance_sunday_present);
-    const hk2Total =
-      toNumberOrNull(student.attendance_hk2_total) ?? toNumberOrNull(student.attendance_sunday_total);
+    const hk1Present = toNumberOrNull(student.attendance_hk1_present);
+    const hk1Total = toNumberOrNull(student.attendance_hk1_total);
+    const hk2Present = toNumberOrNull(student.attendance_hk2_present);
+    const hk2Total = toNumberOrNull(student.attendance_hk2_total);
 
     const attendanceAvg = calculateAttendanceAverage(hk1Present, hk1Total, hk2Present, hk2Total);
     if (attendanceAvg != null) {
@@ -373,22 +384,13 @@ export default async function DashboardPage() {
 
   const teacherIdsBySector = new Map<string, Set<string>>();
 
-  teacherProfiles.forEach((profile) => {
-    if (!profile?.id) return;
-    if (profile.role !== "giao_ly_vien") return;
-    if (profile.status && profile.status !== "ACTIVE") return;
+  teacherRows.forEach((teacher) => {
+    if (!teacher?.id) return;
 
-    let sectorKey: string | null = null;
-
-    if (profile.class_id) {
-      sectorKey = classIdToSectorKey.get(profile.class_id) ?? null;
-    }
-
-    if (!sectorKey) {
-      const identifier = resolveSectorIdentifier(profile.sector);
-      sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, identifier);
-    }
-
+    const identifier = resolveSectorIdentifier(teacher.sector, teacher.class_name, teacher.class_code);
+    const recognizedIdentifier =
+      identifier && KNOWN_SECTOR_KEYS.has(identifier.key) ? identifier : null;
+    const sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, recognizedIdentifier);
     if (!sectorKey) {
       return;
     }
@@ -406,8 +408,8 @@ export default async function DashboardPage() {
       teacherIdsBySector.set(sectorKey, teacherIds);
     }
 
-    if (!teacherIds.has(profile.id)) {
-      teacherIds.add(profile.id);
+    if (!teacherIds.has(teacher.id)) {
+      teacherIds.add(teacher.id);
       accumulator.total_teachers += 1;
     }
   });
