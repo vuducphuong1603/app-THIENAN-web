@@ -65,6 +65,7 @@ export type TeacherRow = {
 
 const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
 const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
+const SUPABASE_MAX_PARALLEL_PAGES = 4;
 
 export function isIgnorableSupabaseError(error?: { code?: string }) {
   if (!error?.code) {
@@ -132,28 +133,86 @@ export async function fetchStudentClassPairs(supabase: SupabaseClient): Promise<
 export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRow[]> {
   const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
   const allRows: StudentRow[] = [];
-  let from = 0;
+  const { data: firstBatchData, error: firstError, count } = await supabase
+    .from("students")
+    .select("*", { count: "exact" })
+    .range(0, pageSize - 1);
 
-  while (true) {
-    const to = from + pageSize - 1;
-    const { data, error } = await supabase.from("students").select("*").range(from, to);
+  if (firstError) {
+    if (isIgnorableSupabaseError(firstError)) {
+      console.warn("Supabase students query fallback:", firstError.message);
+      return [];
+    }
+    throw new Error(firstError.message);
+  }
 
-    if (error) {
-      if (isIgnorableSupabaseError(error)) {
-        console.warn("Supabase students query fallback:", error.message);
-        return [];
+  const firstBatch = (firstBatchData as StudentRow[] | null) ?? [];
+  allRows.push(...firstBatch);
+
+  const totalRows = count ?? firstBatch.length;
+
+  // If we have either the full dataset already or the count is smaller than the page size, exit early.
+  if (totalRows <= firstBatch.length) {
+    return allRows;
+  }
+
+  // If we weren't able to retrieve an accurate count, fall back to the sequential paging approach.
+  if (count === null) {
+    let from = firstBatch.length;
+    while (true) {
+      const to = from + pageSize - 1;
+      const { data, error } = await supabase.from("students").select("*").range(from, to);
+
+      if (error) {
+        if (isIgnorableSupabaseError(error)) {
+          console.warn("Supabase students query fallback:", error.message);
+          return allRows;
+        }
+        throw new Error(error.message);
       }
-      throw new Error(error.message);
+
+      const batch = (data as StudentRow[] | null) ?? [];
+      allRows.push(...batch);
+
+      if (batch.length < pageSize) {
+        break;
+      }
+
+      from += pageSize;
     }
 
-    const batch = (data as StudentRow[] | null) ?? [];
-    allRows.push(...batch);
+    return allRows;
+  }
 
-    if (batch.length < pageSize) {
-      break;
+  const totalPages = Math.ceil(totalRows / pageSize);
+  if (totalPages <= 1) {
+    return allRows;
+  }
+
+  const remainingPageIndexes = Array.from({ length: totalPages - 1 }, (_, index) => index + 1);
+
+  for (let i = 0; i < remainingPageIndexes.length; i += SUPABASE_MAX_PARALLEL_PAGES) {
+    const pageChunk = remainingPageIndexes.slice(i, i + SUPABASE_MAX_PARALLEL_PAGES);
+    const responses = await Promise.all(
+      pageChunk.map((page) => {
+        const from = page * pageSize;
+        const to = from + pageSize - 1;
+        return supabase.from("students").select("*").range(from, to);
+      }),
+    );
+
+    for (const response of responses) {
+      if (response.error) {
+        if (isIgnorableSupabaseError(response.error)) {
+          console.warn("Supabase students query fallback:", response.error.message);
+          return allRows;
+        }
+        throw new Error(response.error.message);
+      }
+
+      const batch = (response.data as StudentRow[] | null) ?? [];
+      allRows.push(...batch);
     }
-
-    from += pageSize;
   }
 
   return allRows;
