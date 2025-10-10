@@ -316,7 +316,12 @@ export default function StudentsPage() {
 
   useEffect(() => {
     if (!studentRows.length) {
-      setStudents([]);
+      setStudents((previous) => {
+        if (!previous.length) {
+          return previous;
+        }
+        return [];
+      });
       return;
     }
 
