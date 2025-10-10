@@ -1,14 +1,202 @@
 "use server";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeAppRole, roleToDbValue } from "@/lib/auth/roles";
 import type { User, CreateUserInput, UpdateUserInput, Sector } from "@/types/database";
 
 export type UserWithTeacherData = User & {
-  teacher_sector?: string | null;
+  teacher_sector?: Sector | null;
+  teacher_sector_label?: string | null;
   teacher_class_id?: string | null;
+  teacher_class_code?: string | null;
   class_name?: string | null;
 };
+
+const SECTOR_LABELS: Record<Sector, string> = {
+  "CHIÊN": "Chiên",
+  "ẤU": "Ấu",
+  "THIẾU": "Thiếu",
+  "NGHĨA": "Nghĩa",
+};
+
+type TeacherInfo = {
+  sectorCode: Sector | null;
+  sectorLabel: string | null;
+  classId: string | null;
+  className: string | null;
+  classCode: string | null;
+};
+
+type ClassLookupValue = {
+  id: string;
+  name: string;
+};
+
+const SECTOR_LOOKUP = (() => {
+  const lookup = new Map<string, Sector>();
+  const add = (value: string, code: Sector) => {
+    const key = normalizeKey(value);
+    if (key) {
+      lookup.set(key, code);
+    }
+  };
+
+  (Object.entries(SECTOR_LABELS) as Array<[Sector, string]>).forEach(([code, label]) => {
+    add(code, code);
+    add(label, code);
+  });
+
+  return lookup;
+})();
+
+function normalizeKey(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+}
+
+function resolveSectorInfo(raw?: string | null): { code: Sector; label: string } | null {
+  const normalized = normalizeKey(raw);
+  if (!normalized) {
+    return null;
+  }
+
+  const code = SECTOR_LOOKUP.get(normalized);
+  if (!code) {
+    return null;
+  }
+
+  return {
+    code,
+    label: SECTOR_LABELS[code],
+  };
+}
+
+function buildClassLookup(rows: Array<{ id: string; name?: string | null }>): Map<string, ClassLookupValue> {
+  const lookup = new Map<string, ClassLookupValue>();
+
+  rows.forEach((cls) => {
+    if (!cls?.id) return;
+    const info: ClassLookupValue = {
+      id: cls.id,
+      name: cls.name ?? cls.id,
+    };
+
+    const keys = new Set<string>();
+    keys.add(normalizeKey(cls.id));
+    if (cls.name) {
+      keys.add(normalizeKey(cls.name));
+    }
+
+    keys.forEach((key) => {
+      if (key) {
+        lookup.set(key, info);
+      }
+    });
+  });
+
+  return lookup;
+}
+
+function resolveClassInfo(
+  teacher: { class_id?: string | null; class_code?: string | null; class_name?: string | null },
+  classLookup: Map<string, ClassLookupValue>,
+): ClassLookupValue | null {
+  const candidates = [teacher.class_id, teacher.class_code, teacher.class_name];
+
+  for (const candidate of candidates) {
+    const key = normalizeKey(candidate);
+    if (!key) continue;
+    const classInfo = classLookup.get(key);
+    if (classInfo) {
+      return classInfo;
+    }
+  }
+
+  return null;
+}
+
+async function fetchTeacherInfoMap(
+  supabase: SupabaseClient,
+  phones: string[],
+): Promise<Map<string, TeacherInfo>> {
+  const map = new Map<string, TeacherInfo>();
+
+  const normalizedPhones = Array.from(
+    new Set(
+      phones
+        .map((phone) => phone?.trim())
+        .filter((phone): phone is string => Boolean(phone)),
+    ),
+  );
+
+  if (normalizedPhones.length === 0) {
+    return map;
+  }
+
+  const { data: teachers, error: teachersError } = await supabase
+    .from("teachers")
+    .select("phone, sector, class_name, class_code")
+    .in("phone", normalizedPhones);
+
+  if (teachersError) {
+    console.error("Error fetching teacher records:", teachersError);
+    return map;
+  }
+
+  const teacherRows = Array.isArray(teachers) ? teachers : [];
+  if (teacherRows.length === 0) {
+    return map;
+  }
+
+  const { data: classRows, error: classesError } = await supabase
+    .from("classes")
+    .select("id, name");
+
+  if (classesError) {
+    console.warn("Error fetching classes for teacher lookup:", classesError.message ?? classesError);
+  }
+
+  const classLookup = buildClassLookup((classRows as Array<{ id: string; name?: string | null }> | null) ?? []);
+
+  teacherRows.forEach((teacher: any) => {
+    const sectorInfo = resolveSectorInfo(teacher.sector);
+    const classInfo = resolveClassInfo(teacher, classLookup);
+
+    map.set(teacher.phone, {
+      sectorCode: sectorInfo?.code ?? null,
+      sectorLabel: sectorInfo?.label ?? teacher.sector ?? null,
+      classId: classInfo?.id ?? null,
+      className: classInfo?.name ?? teacher.class_name ?? teacher.class_code ?? null,
+      classCode: teacher.class_code ?? null,
+    });
+  });
+
+  return map;
+}
+
+async function resolveClassNameById(
+  supabase: SupabaseClient,
+  classId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("classes")
+    .select("name")
+    .eq("id", classId)
+    .maybeSingle();
+
+  if (error) {
+    console.warn("Failed to resolve class name:", error.message ?? error);
+    return null;
+  }
+
+  return data?.name ?? null;
+}
 
 /**
  * Fetch all users from the database with optional filters
@@ -64,46 +252,16 @@ export async function fetchUsers(filters?: {
       return { data: [], error: null };
     }
 
-    // Get teacher data for users with phone numbers
     const userPhones = users
-      .filter((u) => u.phone)
-      .map((u) => u.phone as string);
+      .map((u) => (u.phone ? String(u.phone).trim() : ""))
+      .filter((phone) => phone !== "");
 
-    let teachersMap = new Map<
-      string,
-      { sector?: Sector; class_id?: string; class_name?: string }
-    >();
+    const teacherInfoMap = await fetchTeacherInfoMap(supabase, userPhones);
 
-    if (userPhones.length > 0) {
-      const { data: teachers } = await supabase
-        .from("teachers")
-        .select(
-          `
-          phone,
-          sector,
-          class_id,
-          classes (
-            name
-          )
-        `
-        )
-        .in("phone", userPhones);
-
-      if (teachers) {
-        teachers.forEach((teacher: any) => {
-          const classes = Array.isArray(teacher.classes) ? teacher.classes[0] : teacher.classes;
-          teachersMap.set(teacher.phone, {
-            sector: teacher.sector as Sector | undefined,
-            class_id: teacher.class_id,
-            class_name: classes?.name,
-          });
-        });
-      }
-    }
-
-    // Merge user and teacher data
     const usersWithTeacherData: UserWithTeacherData[] = users.map((user) => {
-      const teacherData = user.phone ? teachersMap.get(user.phone) : null;
+      const phone = user.phone ? String(user.phone).trim() : "";
+      const teacherData = phone ? teacherInfoMap.get(phone) : undefined;
+      const sectorCode = teacherData?.sectorCode ?? null;
 
       return {
         id: user.id,
@@ -116,13 +274,15 @@ export async function fetchUsers(filters?: {
         date_of_birth: null,
         address: null,
         status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
-        sector: (teacherData?.sector as Sector | undefined) || null,
-        class_id: teacherData?.class_id || null,
+        sector: sectorCode,
+        class_id: teacherData?.classId ?? null,
         created_at: user.created_at || new Date().toISOString(),
         updated_at: user.updated_at || new Date().toISOString(),
-        teacher_sector: teacherData?.sector,
-        teacher_class_id: teacherData?.class_id,
-        class_name: teacherData?.class_name,
+        teacher_sector: sectorCode,
+        teacher_sector_label: teacherData?.sectorLabel ?? null,
+        teacher_class_id: teacherData?.classId ?? null,
+        teacher_class_code: teacherData?.classCode ?? null,
+        class_name: teacherData?.className ?? null,
       };
     });
 
@@ -170,32 +330,10 @@ export async function fetchUserById(
       return { data: null, error: error.message };
     }
 
-    // Get teacher data if phone exists
-    let teacherData: { sector?: Sector; class_id?: string; class_name?: string } | null = null;
-    if (user.phone) {
-      const { data: teacher } = await supabase
-        .from("teachers")
-        .select(
-          `
-          sector,
-          class_id,
-          classes (
-            name
-          )
-        `
-        )
-        .eq("phone", user.phone)
-        .maybeSingle();
-
-      if (teacher) {
-        const classes = Array.isArray(teacher.classes) ? teacher.classes[0] : teacher.classes;
-        teacherData = {
-          sector: teacher.sector as Sector | undefined,
-          class_id: teacher.class_id,
-          class_name: classes?.name,
-        };
-      }
-    }
+    const phone = user.phone ? String(user.phone).trim() : "";
+    const teacherInfoMap = await fetchTeacherInfoMap(supabase, phone ? [phone] : []);
+    const teacherData = phone ? teacherInfoMap.get(phone) : undefined;
+    const sectorCode = teacherData?.sectorCode ?? null;
 
     const userWithTeacherData: UserWithTeacherData = {
       id: user.id,
@@ -208,13 +346,15 @@ export async function fetchUserById(
       date_of_birth: null,
       address: null,
       status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
-      sector: teacherData?.sector || null,
-      class_id: teacherData?.class_id || null,
+      sector: sectorCode,
+      class_id: teacherData?.classId ?? null,
       created_at: user.created_at || new Date().toISOString(),
       updated_at: user.updated_at || new Date().toISOString(),
-      teacher_sector: teacherData?.sector,
-      teacher_class_id: teacherData?.class_id,
-      class_name: teacherData?.class_name,
+      teacher_sector: sectorCode,
+      teacher_sector_label: teacherData?.sectorLabel ?? null,
+      teacher_class_id: teacherData?.classId ?? null,
+      teacher_class_code: teacherData?.classCode ?? null,
+      class_name: teacherData?.className ?? null,
     };
 
     return { data: userWithTeacherData, error: null };
@@ -270,18 +410,25 @@ export async function createUser(
       return { data: null, error: profileError.message };
     }
 
-    // If sector and class are provided, create/update teacher record
-    if (input.sector && input.class_id) {
-      await supabase
-        .from("teachers")
-        .upsert({
-          phone: input.phone,
-          full_name: input.full_name,
-          saint_name: input.saint_name || null,
-          role: dbRole,
-          sector: input.sector,
-          class_id: input.class_id,
-        });
+    const teacherPayload: Record<string, unknown> = {
+      phone: input.phone,
+      full_name: input.full_name,
+      saint_name: input.saint_name || null,
+      role: dbRole,
+    };
+
+    if (input.sector) {
+      teacherPayload.sector = SECTOR_LABELS[input.sector];
+    }
+
+    if (input.class_id) {
+      teacherPayload.class_name =
+        (await resolveClassNameById(supabase, input.class_id)) ?? input.class_id;
+    }
+
+    const { error: teacherError } = await supabase.from("teachers").upsert(teacherPayload);
+    if (teacherError) {
+      console.error("Failed to upsert teacher record:", teacherError);
     }
 
     return {
@@ -354,23 +501,50 @@ export async function updateUser(
       }
     }
 
-    // Update teacher record if sector/class provided
-    if (profile.phone && (input.sector !== undefined || input.class_id !== undefined)) {
-      const teacherUpdate: any = {};
-      if (input.sector !== undefined) teacherUpdate.sector = input.sector;
-      if (input.class_id !== undefined) teacherUpdate.class_id = input.class_id;
-      if (input.full_name !== undefined) teacherUpdate.full_name = input.full_name;
-      if (input.saint_name !== undefined) teacherUpdate.saint_name = input.saint_name;
+    const shouldSyncTeacher =
+      profile.phone &&
+      (input.sector !== undefined ||
+        input.class_id !== undefined ||
+        input.full_name !== undefined ||
+        input.saint_name !== undefined ||
+        input.role !== undefined);
+
+    if (shouldSyncTeacher && profile.phone) {
+      const teacherUpdate: Record<string, unknown> = {
+        phone: profile.phone,
+      };
+
+      if (input.full_name !== undefined) {
+        teacherUpdate.full_name = input.full_name;
+      }
+
+      if (input.saint_name !== undefined) {
+        teacherUpdate.saint_name = input.saint_name;
+      }
+
       if (input.role !== undefined) {
         teacherUpdate.role = roleToDbValue(normalizeAppRole(input.role));
       }
 
-      await supabase
-        .from("teachers")
-        .upsert({
-          phone: profile.phone,
-          ...teacherUpdate,
-        });
+      if (input.sector !== undefined) {
+        teacherUpdate.sector = input.sector
+          ? SECTOR_LABELS[input.sector]
+          : null;
+      }
+
+      if (input.class_id !== undefined) {
+        if (input.class_id) {
+          teacherUpdate.class_name =
+            (await resolveClassNameById(supabase, input.class_id)) ?? input.class_id;
+        } else {
+          teacherUpdate.class_name = null;
+        }
+      }
+
+      const { error: teacherError } = await supabase.from("teachers").upsert(teacherUpdate);
+      if (teacherError) {
+        console.error("Failed to sync teacher record:", teacherError);
+      }
     }
 
     return {

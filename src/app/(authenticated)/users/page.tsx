@@ -18,6 +18,13 @@ import {
 import { fetchClasses } from "@/lib/actions/classes";
 import { getRoleLabel } from "@/lib/auth/roles";
 
+const SECTOR_DISPLAY_LABELS: Record<Sector, string> = {
+  CHIÊN: "Chiên",
+  ẤU: "Ấu",
+  THIẾU: "Thiếu",
+  NGHĨA: "Nghĩa",
+};
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithTeacherData[]>([]);
   const [classes, setClasses] = useState<Array<{ id: string; name: string; sector: Sector }>>([]);
@@ -227,10 +234,33 @@ export default function UsersPage() {
     }
   };
 
-  const getClassName = (classId: string | null | undefined) => {
-    if (!classId) return "Chưa phân công";
-    const found = classes.find((c) => c.id === classId);
-    return found?.name || "N/A";
+  const getSectorLabel = (user: UserWithTeacherData) => {
+    if (user.teacher_sector_label) {
+      return user.teacher_sector_label;
+    }
+    if (user.teacher_sector) {
+      return SECTOR_DISPLAY_LABELS[user.teacher_sector] ?? user.teacher_sector;
+    }
+    return null;
+  };
+
+  const getClassDisplay = (user: UserWithTeacherData) => {
+    if (user.class_name) {
+      return user.class_name;
+    }
+
+    if (user.teacher_class_id) {
+      const matchedClass = classes.find((cls) => cls.id === user.teacher_class_id);
+      if (matchedClass?.name) {
+        return matchedClass.name;
+      }
+    }
+
+    if (user.teacher_class_code) {
+      return user.teacher_class_code;
+    }
+
+    return "Chưa phân công";
   };
 
   if (isLoading) {
@@ -332,55 +362,60 @@ export default function UsersPage() {
       </div>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filteredUsers.map((user) => (
-          <Card key={user.id}>
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-slate-800">
-                  {user.saint_name ? `${user.saint_name} ` : ""}
-                  {user.full_name}
-                </h3>
-                <p className="text-sm text-slate-500">{user.phone}</p>
-              </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {getRoleLabel(user.role as any)}
-              </span>
-            </div>
+        {filteredUsers.map((user) => {
+          const sectorLabel = getSectorLabel(user);
+          const classDisplay = getClassDisplay(user);
 
-            <div className="mt-3 space-y-1 text-sm text-slate-600">
-              <p>
-                <span className="font-medium">Ngành/Lớp:</span>{" "}
-                {user.teacher_sector ? `Ngành ${user.teacher_sector}` : "N/A"}
-                <br />
-                <span className="ml-16">{getClassName(user.teacher_class_id)}</span>
-              </p>
-              <p>
-                <span className="font-medium">Liên hệ:</span> {user.phone}
-              </p>
-              <p>
-                <span className="font-medium">Trạng thái:</span>{" "}
-                <span className={user.status === "ACTIVE" ? "text-emerald-600" : "text-red-600"}>
-                  {user.status === "ACTIVE" ? "Hoạt động" : "Tạm nghỉ"}
+          return (
+            <Card key={user.id}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800">
+                    {user.saint_name ? `${user.saint_name} ` : ""}
+                    {user.full_name}
+                  </h3>
+                  <p className="text-sm text-slate-500">{user.phone}</p>
+                </div>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {getRoleLabel(user.role as any)}
                 </span>
-              </p>
-            </div>
+              </div>
 
-            <div className="mt-4 flex gap-2">
-              <Button size="sm" variant="outline" onClick={() => handleEdit(user)} fullWidth>
-                Chỉnh sửa
-              </Button>
-              <Button
-                size="sm"
-                variant="danger"
-                onClick={() => handleLockAccount(user.id)}
-                fullWidth
-                disabled={user.status === "INACTIVE"}
-              >
-                Khóa
-              </Button>
-            </div>
-          </Card>
-        ))}
+              <div className="mt-3 space-y-1 text-sm text-slate-600">
+                <p>
+                  <span className="font-medium">Ngành/Lớp:</span>{" "}
+                  {sectorLabel ? `Ngành ${sectorLabel}` : "N/A"}
+                  <br />
+                  <span className="ml-16">{classDisplay}</span>
+                </p>
+                <p>
+                  <span className="font-medium">Liên hệ:</span> {user.phone}
+                </p>
+                <p>
+                  <span className="font-medium">Trạng thái:</span>{" "}
+                  <span className={user.status === "ACTIVE" ? "text-emerald-600" : "text-red-600"}>
+                    {user.status === "ACTIVE" ? "Hoạt động" : "Tạm nghỉ"}
+                  </span>
+                </p>
+              </div>
+
+              <div className="mt-4 flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => handleEdit(user)} fullWidth>
+                  Chỉnh sửa
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handleLockAccount(user.id)}
+                  fullWidth
+                  disabled={user.status === "INACTIVE"}
+                >
+                  Khóa
+                </Button>
+              </div>
+            </Card>
+          );
+        })}
       </section>
 
       {/* Create User Modal */}
