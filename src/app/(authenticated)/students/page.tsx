@@ -11,56 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/providers/auth-provider";
 import type { Sector, StudentStatus, StudentWithGrades } from "@/types/database";
-
-type ClassRow = {
-  id: string;
-  name?: string | null;
-  sector_id?: number | null;
-  sector?: string | null;
-  sector_code?: string | null;
-  sector_name?: string | null;
-  branch?: string | null;
-  branch_code?: string | null;
-  branch_name?: string | null;
-  code?: string | null;
-};
-
-type SectorRow = {
-  id: number;
-  name: string | null;
-  code: string | null;
-};
-
-type StudentRow = {
-  id: string;
-  class_id?: string | null;
-  saint_name?: string | null;
-  full_name?: string | null;
-  code?: string | null;
-  student_code?: string | null;
-  date_of_birth?: string | null;
-  phone?: string | null;
-  parent_phone1?: string | null;
-  parent_phone2?: string | null;
-  parent_phone_1?: string | null;
-  parent_phone_2?: string | null;
-  address?: string | null;
-  notes?: string | null;
-  academic_hk1_fortyfive?: number | string | null;
-  academic_hk1_exam?: number | string | null;
-  academic_hk2_fortyfive?: number | string | null;
-  academic_hk2_exam?: number | string | null;
-  attendance_hk1_present?: number | string | null;
-  attendance_hk1_total?: number | string | null;
-  attendance_hk2_present?: number | string | null;
-  attendance_hk2_total?: number | string | null;
-  attendance_thursday_present?: number | string | null;
-  attendance_thursday_total?: number | string | null;
-  attendance_sunday_present?: number | string | null;
-  attendance_sunday_total?: number | string | null;
-};
-
-const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
+import { fetchClasses, fetchSectors, fetchStudents } from "@/lib/queries/supabase";
+import type { ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
 
 const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
   CHIEN: "CHIÊN",
@@ -76,21 +28,12 @@ const SECTOR_ORDER: Record<Sector, number> = {
   "NGHĨA": 3,
 };
 
-const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
-
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9]/g, "")
     .toUpperCase();
-}
-
-function isIgnorableSupabaseError(error?: { code?: string }) {
-  if (!error?.code) {
-    return false;
-  }
-  return SUPABASE_IGNORED_ERROR_CODES.has(error.code);
 }
 
 function tryResolveSector(value?: string | null): Sector | null {
@@ -169,19 +112,9 @@ export default function StudentsPage() {
     data: sectorRows = [],
     isLoading: isLoadingSectors,
     error: sectorsError,
-  } = useQuery({
+  } = useQuery<SectorRow[]>({
     queryKey: ["sectors", "list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("sectors").select("id, name, code");
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase sectors query fallback:", error.message);
-          return [] as SectorRow[];
-        }
-        throw new Error(error.message);
-      }
-      return (data as SectorRow[] | null) ?? [];
-    },
+    queryFn: () => fetchSectors(supabase),
   });
 
   const sectorById = useMemo(() => {
@@ -196,21 +129,9 @@ export default function StudentsPage() {
     data: classRows = [],
     isLoading: isLoadingClasses,
     error: classesError,
-  } = useQuery({
+  } = useQuery<ClassRow[]>({
     queryKey: ["classes", "list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("classes").select("*");
-
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase classes query fallback:", error.message);
-          return [] as ClassRow[];
-        }
-        throw new Error(error.message);
-      }
-
-      return (data as ClassRow[] | null) ?? [];
-    },
+    queryFn: () => fetchClasses(supabase),
   });
 
   const classOptions = useMemo(() => {
@@ -269,38 +190,9 @@ export default function StudentsPage() {
     data: studentRows = [],
     isLoading: isLoadingStudents,
     error: studentsError,
-  } = useQuery({
+  } = useQuery<StudentRow[]>({
     queryKey: ["students", "list"],
-    queryFn: async () => {
-      const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
-      const allRows: StudentRow[] = [];
-      let from = 0;
-
-      // Fetch every page until Supabase returns less than page size.
-      while (true) {
-        const to = from + pageSize - 1;
-        const { data, error } = await supabase.from("students").select("*").range(from, to);
-
-        if (error) {
-          if (isIgnorableSupabaseError(error)) {
-            console.warn("Supabase students query fallback:", error.message);
-            return [] as StudentRow[];
-          }
-          throw new Error(error.message);
-        }
-
-        const batch = (data as StudentRow[] | null) ?? [];
-        allRows.push(...batch);
-
-        if (batch.length < pageSize) {
-          break;
-        }
-
-        from += pageSize;
-      }
-
-      return allRows;
-    },
+    queryFn: () => fetchStudents(supabase),
   });
 
   const [students, setStudents] = useState<StudentWithGrades[]>([]);

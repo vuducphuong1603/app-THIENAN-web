@@ -11,43 +11,8 @@ import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import type { ClassWithTeachers, Sector, TeacherAssignment } from "@/types/database";
 import { useAuth } from "@/providers/auth-provider";
-
-type ClassRow = {
-  id: string;
-  name?: string | null;
-  sector_id?: number | null;
-  sector?: string | null;
-  sector_code?: string | null;
-  sector_name?: string | null;
-  branch?: string | null;
-  branch_code?: string | null;
-  branch_name?: string | null;
-  code?: string | null;
-};
-
-type SectorRow = {
-  id: number;
-  name: string | null;
-  code: string | null;
-};
-
-type TeacherRow = {
-  id: string;
-  saint_name: string | null;
-  first_name: string | null;
-  last_name: string | null;
-  full_name: string | null;
-  phone: string | null;
-  class_id?: string | null;
-  class_name: string | null;
-  class_code: string | null;
-  sector: string | null;
-};
-
-type StudentRow = {
-  id: string;
-  class_id: string | null;
-};
+import { fetchClasses, fetchSectors, fetchStudentClassPairs, fetchTeachers } from "@/lib/queries/supabase";
+import type { ClassRow, SectorRow, StudentClassRow, TeacherRow } from "@/lib/queries/supabase";
 
 type AvailableTeacher = {
   id: string;
@@ -126,83 +91,36 @@ export default function ClassesPage() {
     data: classRows = [],
     isLoading: isLoadingClasses,
     error: classesError,
-  } = useQuery({
+  } = useQuery<ClassRow[]>({
     queryKey: ["classes", "list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("classes").select("*");
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase classes query fallback:", error.message);
-          return [] as ClassRow[];
-        }
-        throw new Error(error.message);
-      }
-
-      return (data as ClassRow[] | null) ?? [];
-    },
+    queryFn: () => fetchClasses(supabase),
   });
 
   const {
     data: sectorRows = [],
     isLoading: isLoadingSectors,
     error: sectorsError,
-  } = useQuery({
+  } = useQuery<SectorRow[]>({
     queryKey: ["sectors", "list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("sectors").select("id, name, code");
-
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase sectors query fallback:", error.message);
-          return [] as SectorRow[];
-        }
-        throw new Error(error.message);
-      }
-
-      return (data as SectorRow[] | null) ?? [];
-    },
+    queryFn: () => fetchSectors(supabase),
   });
 
   const {
     data: teacherRows = [],
     isLoading: isLoadingTeachers,
     error: teachersError,
-  } = useQuery({
+  } = useQuery<TeacherRow[]>({
     queryKey: ["teachers", "list"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("teachers").select("*");
-
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase teachers query fallback:", error.message);
-          return [] as TeacherRow[];
-        }
-        throw new Error(error.message);
-      }
-
-      return (data as TeacherRow[] | null) ?? [];
-    },
+    queryFn: () => fetchTeachers(supabase),
   });
 
   const {
     data: studentRows = [],
     isLoading: isLoadingStudents,
     error: studentsError,
-  } = useQuery({
+  } = useQuery<StudentClassRow[]>({
     queryKey: ["students", "classCounts"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("students").select("id, class_id");
-
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase students query fallback:", error.message);
-          return [] as StudentRow[];
-        }
-        throw new Error(error.message);
-      }
-
-      return (data as StudentRow[] | null) ?? [];
-    },
+    queryFn: () => fetchStudentClassPairs(supabase),
   });
 
   const { classes, availableTeachers } = useMemo(() => {
