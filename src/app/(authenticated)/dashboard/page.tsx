@@ -65,18 +65,68 @@ const defaultSectors: SectorMetrics[] = [
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
 
-  const [{ data: summaryData }, { data: sectorData }] = await Promise.all([
+  const [
+    summaryResult,
+    sectorResult,
+    sectorsCountResult,
+    classesCountResult,
+    studentsCountResult,
+    usersCountResult,
+  ] = await Promise.all([
     supabase.rpc("dashboard_summary").maybeSingle(),
     supabase
       .from("sector_overview")
       .select(
         "sector, total_classes, total_students, total_teachers, attendance_avg, study_avg",
       ),
+    supabase.from("sectors").select("id", { count: "exact", head: true }),
+    supabase.from("classes").select("id", { count: "exact", head: true }),
+    supabase.from("students").select("id", { count: "exact", head: true }),
+    supabase.from("user_profiles").select("id", { count: "exact", head: true }),
   ]);
 
-  const resolvedSummary: SummaryMetrics = {
+  const summaryData = summaryResult.data as Partial<SummaryMetrics> | null | undefined;
+  const sectorData = sectorResult.data;
+
+  const baseSummary: SummaryMetrics = {
     ...defaultSummary,
-    ...(summaryData as Partial<SummaryMetrics> | null | undefined),
+    ...(summaryData ?? {}),
+  };
+
+  const resolveCount = (
+    result: { count: number | null; error: { message?: string } | null },
+    fallback: number,
+    label: string,
+  ) => {
+    if (result.error) {
+      console.warn(`Dashboard ${label} count fallback:`, result.error.message ?? result.error);
+      return fallback;
+    }
+    return typeof result.count === "number" ? result.count : fallback;
+  };
+
+  const resolvedSummary: SummaryMetrics = {
+    ...baseSummary,
+    sectors: resolveCount(
+      sectorsCountResult,
+      summaryData?.sectors ?? defaultSummary.sectors,
+      "sector",
+    ),
+    classes: resolveCount(
+      classesCountResult,
+      summaryData?.classes ?? defaultSummary.classes,
+      "class",
+    ),
+    students: resolveCount(
+      studentsCountResult,
+      summaryData?.students ?? defaultSummary.students,
+      "student",
+    ),
+    teachers: resolveCount(
+      usersCountResult,
+      summaryData?.teachers ?? defaultSummary.teachers,
+      "user",
+    ),
   };
 
   const sectors: SectorMetrics[] = (sectorData as SectorMetrics[] | null | undefined) ?? defaultSectors;

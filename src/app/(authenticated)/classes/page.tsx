@@ -547,55 +547,62 @@ export default function ClassesPage() {
               description={`Số lớp: ${group.classes.length}`}
             />
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {group.classes.map((classItem) => (
-                <div key={classItem.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between">
-                    <h4 className="text-base font-semibold text-slate-800">{classItem.name}</h4>
-                    <span className="flex items-center gap-1 text-sm text-slate-500">
-                      <Users className="h-4 w-4" />
-                      {classItem.student_count}
-                    </span>
+              {group.classes.map((classItem) => {
+                const assistants = classItem.teachers.filter((t) => !t.is_primary);
+
+                return (
+                  <div key={classItem.id} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-start justify-between">
+                      <h4 className="text-base font-semibold text-slate-800">{classItem.name}</h4>
+                      <span className="flex items-center gap-1 text-sm text-slate-500">
+                        <Users className="h-4 w-4" />
+                        {classItem.student_count}
+                      </span>
+                    </div>
+                    <div className="mt-2 space-y-1 text-sm text-slate-600">
+                      <p className="font-medium text-slate-700">{getPrimaryTeacher(classItem.teachers)}</p>
+                      <div className="space-y-0.5">
+                        {assistants.length > 0 ? (
+                          assistants.map((assistant) => (
+                            <p key={assistant.id} className="font-medium text-slate-700">
+                              {getTeacherName(assistant.teacher)}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-sm text-slate-500">Chưa phân công</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleViewStudents(classItem)}
+                        className="flex items-center gap-1"
+                      >
+                        <Eye className="h-3 w-3" />
+                        Xem
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(classItem)}
+                        fullWidth
+                      >
+                        Chỉnh sửa
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDelete(classItem.id)}
+                        className="flex items-center gap-1"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="mt-2 space-y-1 text-sm text-slate-600">
-                    <p>
-                      <span className="font-medium">Giáo lý viên:</span>
-                    </p>
-                    <p className="text-xs">{getPrimaryTeacher(classItem.teachers)}</p>
-                    {classItem.teachers.filter((t) => !t.is_primary).length > 0 && (
-                      <p className="text-xs text-slate-500">
-                        + {classItem.teachers.filter((t) => !t.is_primary).length} phụ
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-4 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleViewStudents(classItem)}
-                      className="flex items-center gap-1"
-                    >
-                      <Eye className="h-3 w-3" />
-                      Xem
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleEdit(classItem)}
-                      fullWidth
-                    >
-                      Chỉnh sửa
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      onClick={() => handleDelete(classItem.id)}
-                      className="flex items-center gap-1"
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         ))}
