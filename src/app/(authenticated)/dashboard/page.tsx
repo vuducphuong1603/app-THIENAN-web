@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type SummaryMetrics = {
@@ -158,21 +160,44 @@ export default async function DashboardPage() {
           {
             label: "Tổng số lớp",
             value: resolvedSummary.classes,
+            href: "/classes",
           },
           {
             label: "Tổng thiếu nhi",
             value: resolvedSummary.students,
+            href: "/students",
           },
           {
             label: "Giáo lý viên",
             value: resolvedSummary.teachers,
+            href: "/users",
           },
-        ].map((card) => (
-          <div key={card.label} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-sm text-slate-500">{card.label}</p>
-            <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
-          </div>
-        ))}
+        ].map((card) => {
+          const baseClasses =
+            "rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition";
+          const interactiveClasses =
+            "hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400";
+
+          if (card.href) {
+            return (
+              <Link
+                key={card.label}
+                href={card.href}
+                className={`${baseClasses} ${interactiveClasses}`}
+              >
+                <p className="text-sm text-slate-500">{card.label}</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
+              </Link>
+            );
+          }
+
+          return (
+            <div key={card.label} className={baseClasses}>
+              <p className="text-sm text-slate-500">{card.label}</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
+            </div>
+          );
+        })}
       </section>
 
       <section className="space-y-4">
