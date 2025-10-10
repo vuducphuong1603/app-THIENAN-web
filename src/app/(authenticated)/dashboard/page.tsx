@@ -55,6 +55,16 @@ type TeacherRow = {
   class_name?: string | null;
 };
 
+type AttendanceRecordRow = {
+  student_id: string;
+  event_date: string | null;
+  weekday: string | null;
+  status: string | null;
+  students?: {
+    class_id?: string | null;
+  } | null;
+};
+
 type SummaryMetrics = {
   academic_year: string;
   total_weeks: number;
@@ -76,6 +86,7 @@ type SectorMetrics = {
 type SectorMetricsWithOrder = SectorMetrics & { key: string; order: number };
 
 const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
+const SUPABASE_ATTENDANCE_PAGE_SIZE = 1000;
 
 const DEFAULT_SECTOR_IDENTIFIERS: SectorIdentifier[] = [
   { key: "CHIEN", label: "Chiên", order: 0 },
@@ -247,6 +258,41 @@ async function fetchAllStudents(client: Awaited<ReturnType<typeof createSupabase
   return allRows;
 }
 
+async function fetchRecentAttendanceRecords(
+  client: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  fromDateIso: string,
+) {
+  const pageSize = SUPABASE_ATTENDANCE_PAGE_SIZE;
+  const allRows: AttendanceRecordRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await client
+      .from("attendance_records")
+      .select("student_id, event_date, weekday, status, students(class_id)")
+      .gte("event_date", fromDateIso)
+      .order("event_date", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.warn("Dashboard attendance query fallback:", error.message ?? error);
+      break;
+    }
+
+    const batch = (data as AttendanceRecordRow[] | null) ?? [];
+    allRows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+  }
+
+  return allRows;
+}
+
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
 
@@ -338,6 +384,8 @@ export default async function DashboardPage() {
     }
   });
 
+  const classRosterCounts = new Map<string, number>();
+
   studentRows.forEach((student) => {
     if (!student) {
       return;
@@ -346,6 +394,7 @@ export default async function DashboardPage() {
     if (!classId) {
       return;
     }
+    classRosterCounts.set(classId, (classRosterCounts.get(classId) ?? 0) + 1);
     const sectorKey = classIdToSectorKey.get(normalizeClassId(classId));
     if (!sectorKey) {
       return;
@@ -411,6 +460,78 @@ export default async function DashboardPage() {
     if (!teacherIds.has(teacher.id)) {
       teacherIds.add(teacher.id);
       accumulator.total_teachers += 1;
+    }
+  });
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 6);
+  const attendanceFromDateIso = sevenDaysAgo.toISOString().slice(0, 10);
+
+  const attendanceRecords = await fetchRecentAttendanceRecords(supabase, attendanceFromDateIso);
+
+  type AttendanceDailyAccumulator = {
+    weekday: string;
+    eventDate: string;
+    presentCount: number;
+    recordedCounts: Map<string, number>;
+  };
+
+  const attendanceByDate = new Map<string, AttendanceDailyAccumulator>();
+
+  attendanceRecords.forEach((record) => {
+    if (!record?.event_date) {
+      return;
+    }
+    const weekday = (record.weekday ?? "").trim() || "Khác";
+    const key = `${weekday}|${record.event_date}`;
+    let accumulator = attendanceByDate.get(key);
+    if (!accumulator) {
+      accumulator = {
+        weekday,
+        eventDate: record.event_date,
+        presentCount: 0,
+        recordedCounts: new Map<string, number>(),
+      };
+      attendanceByDate.set(key, accumulator);
+    }
+
+    if ((record.status ?? "").toLowerCase() === "present") {
+      accumulator.presentCount += 1;
+    }
+
+    const classId = sanitizeClassId(record.students?.class_id);
+    if (classId) {
+      accumulator.recordedCounts.set(
+        classId,
+        (accumulator.recordedCounts.get(classId) ?? 0) + 1,
+      );
+    }
+  });
+
+  const attendanceSummaryByWeekday = new Map<
+    string,
+    { weekday: string; eventDate: string; present: number; pending: number }
+  >();
+
+  attendanceByDate.forEach((daily) => {
+    let pendingCount = 0;
+    daily.recordedCounts.forEach((recorded, classId) => {
+      const rosterSize = classRosterCounts.get(classId) ?? 0;
+      if (rosterSize > recorded) {
+        pendingCount += rosterSize - recorded;
+      }
+    });
+
+    const existing = attendanceSummaryByWeekday.get(daily.weekday);
+    if (!existing || daily.eventDate > existing.eventDate) {
+      attendanceSummaryByWeekday.set(daily.weekday, {
+        weekday: daily.weekday,
+        eventDate: daily.eventDate,
+        present: daily.presentCount,
+        pending: pendingCount,
+      });
     }
   });
 
@@ -509,10 +630,34 @@ export default async function DashboardPage() {
     }),
   );
 
-  const attendance = [
-    { session: "Thứ 5", present: 210, pending: 18 },
-    { session: "Chủ nhật", present: 298, pending: 4 },
-  ];
+  const DEFAULT_ATTENDANCE_SESSIONS = ["Thứ 5", "Chủ nhật"];
+
+  const orderedAttendance = DEFAULT_ATTENDANCE_SESSIONS.map((session) => {
+    const summary = attendanceSummaryByWeekday.get(session);
+    return {
+      session: summary?.weekday ?? session,
+      present: summary?.present ?? 0,
+      pending: summary?.pending ?? 0,
+    };
+  });
+
+  const knownSessions = new Set(DEFAULT_ATTENDANCE_SESSIONS);
+
+  const additionalAttendance = Array.from(attendanceSummaryByWeekday.values())
+    .filter((summary) => !knownSessions.has(summary.weekday))
+    .sort((a, b) => {
+      if (a.eventDate === b.eventDate) {
+        return a.weekday.localeCompare(b.weekday);
+      }
+      return b.eventDate.localeCompare(a.eventDate);
+    })
+    .map((summary) => ({
+      session: summary.weekday,
+      present: summary.present,
+      pending: summary.pending,
+    }));
+
+  const attendance = [...orderedAttendance, ...additionalAttendance];
 
   return (
     <div className="space-y-8">
