@@ -366,7 +366,7 @@ export default function UsersPage() {
             onChange={(e) => setClassFilter(e.target.value)}
             disabled={!sectorFilter}
           >
-            <option value="">Chọn lớp</option>
+            <option value="">Tất cả lớp</option>
             {classesForFilterDropdown.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {formatLabel(cls.name)}
@@ -518,7 +518,7 @@ export default function UsersPage() {
           <Select
             label="Lớp"
             options={[
-              { value: "", label: "Chọn lớp" },
+              { value: "", label: "Không phân lớp" },
               ...classesForForm.map((c) => ({ value: c.id, label: formatLabel(c.name) })),
             ]}
             value={formData.class_id}
@@ -601,7 +601,7 @@ export default function UsersPage() {
           <Select
             label="Lớp"
             options={[
-              { value: "", label: "Chọn lớp" },
+              { value: "", label: "Không phân lớp" },
               ...classesForForm.map((c) => ({ value: c.id, label: formatLabel(c.name) })),
             ]}
             value={formData.class_id}
