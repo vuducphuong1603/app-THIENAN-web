@@ -1,7 +1,7 @@
 "use client";
 
 import { Search, Upload, UserPlus, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -25,9 +25,53 @@ const SECTOR_DISPLAY_LABELS: Record<Sector, string> = {
   NGHĨA: "Nghĩa",
 };
 
+const SECTOR_CODE_LOOKUP: Record<string, Sector> = {
+  CHIEN: "CHIÊN",
+  CHIÊN: "CHIÊN",
+  AU: "ẤU",
+  ẤU: "ẤU",
+  THIEU: "THIẾU",
+  THIẾU: "THIẾU",
+  NGHIA: "NGHĨA",
+  NGHĨA: "NGHĨA",
+};
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+}
+
+function resolveSector(value?: string | null): Sector | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = normalizeText(value);
+  const direct = SECTOR_CODE_LOOKUP[normalized];
+  if (direct) {
+    return direct;
+  }
+
+  if (normalized.includes("CHIEN")) return "CHIÊN";
+  if (normalized.includes("NGHIA")) return "NGHĨA";
+  if (normalized.includes("THIEU")) return "THIẾU";
+  if (normalized.includes("AU")) return "ẤU";
+
+  return null;
+}
+
+type ClassOption = {
+  id: string;
+  name: string;
+  sector: Sector | null;
+};
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithTeacherData[]>([]);
-  const [classes, setClasses] = useState<Array<{ id: string; name: string; sector: Sector }>>([]);
+  const [classes, setClasses] = useState<ClassOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
@@ -106,7 +150,25 @@ export default function UsersPage() {
       }
 
       if (classesResult.data) {
-        setClasses(classesResult.data);
+        const normalizedClasses: ClassOption[] = classesResult.data.map((cls: any) => {
+          const resolvedSector =
+            resolveSector(cls.sector) ??
+            resolveSector(cls.sector_code) ??
+            resolveSector(cls.sector_name) ??
+            resolveSector(cls.branch) ??
+            resolveSector(cls.branch_code) ??
+            resolveSector(cls.branch_name) ??
+            resolveSector(cls.name) ??
+            null;
+
+          return {
+            id: cls.id,
+            name: cls.name ?? cls.id,
+            sector: resolvedSector,
+          };
+        });
+
+        setClasses(normalizedClasses);
       }
     } catch (error) {
       console.error("Error loading data:", error);
@@ -130,8 +192,24 @@ export default function UsersPage() {
 
   const getClassesBySector = (sector: Sector | "") =>
     classes.filter((c) => !sector || c.sector === sector);
-  const classesForFilterDropdown = getClassesBySector(sectorFilter);
-  const classesForForm = getClassesBySector(formData.sector);
+
+  const classesForFilterDropdown = useMemo(() => {
+    const filtered = getClassesBySector(sectorFilter);
+    if (classFilter && !filtered.some((cls) => cls.id === classFilter)) {
+      const selected = classes.find((cls) => cls.id === classFilter);
+      return selected ? [...filtered, selected] : filtered;
+    }
+    return filtered;
+  }, [classes, sectorFilter, classFilter]);
+
+  const classesForForm = useMemo(() => {
+    const filtered = getClassesBySector(formData.sector);
+    if (formData.class_id && !filtered.some((cls) => cls.id === formData.class_id)) {
+      const selected = classes.find((cls) => cls.id === formData.class_id);
+      return selected ? [...filtered, selected] : filtered;
+    }
+    return filtered;
+  }, [classes, formData.sector, formData.class_id]);
 
   const handleClearFilters = () => {
     setSearchTerm("");
