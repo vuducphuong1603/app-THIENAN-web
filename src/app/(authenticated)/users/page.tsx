@@ -69,6 +69,8 @@ type ClassOption = {
   sector: Sector | null;
 };
 
+const CLASS_PLACEHOLDER_VALUE = "__class_placeholder__";
+
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithTeacherData[]>([]);
   const [classes, setClasses] = useState<ClassOption[]>([]);
@@ -177,18 +179,53 @@ export default function UsersPage() {
     }
   };
 
-  // Filter users based on search and filters
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (user.phone && user.phone.includes(searchTerm));
-    const matchesRole = !roleFilter || user.role === roleFilter;
-    const matchesSector = !sectorFilter || user.teacher_sector === sectorFilter;
-    const matchesClass = !classFilter || user.teacher_class_id === classFilter;
+  const normalizeForLookup = (value?: string | null) =>
+    value ? normalizeText(String(value)) : "";
 
-    return matchesSearch && matchesRole && matchesSector && matchesClass;
-  });
+  const selectedClassLookup = useMemo(() => {
+    if (!classFilter) {
+      return null;
+    }
+
+    const keys = new Set<string>();
+    const addKey = (value?: string | null) => {
+      const normalized = normalizeForLookup(value);
+      if (normalized) {
+        keys.add(normalized);
+      }
+    };
+
+    addKey(classFilter);
+
+    const classInfo = classes.find((cls) => cls.id === classFilter);
+    if (classInfo) {
+      addKey(classInfo.id);
+      addKey(classInfo.name);
+    }
+
+    return keys.size > 0 ? keys : null;
+  }, [classFilter, classes]);
+
+  // Filter users based on search and filters
+  const filteredUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        const matchesSearch =
+          user.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          user.username.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (user.phone && user.phone.includes(searchTerm));
+        const matchesRole = !roleFilter || user.role === roleFilter;
+        const matchesSector = !sectorFilter || user.teacher_sector === sectorFilter;
+        const matchesClass =
+          !selectedClassLookup ||
+          selectedClassLookup.has(normalizeForLookup(user.teacher_class_id)) ||
+          selectedClassLookup.has(normalizeForLookup(user.teacher_class_code)) ||
+          selectedClassLookup.has(normalizeForLookup(user.class_name));
+
+        return matchesSearch && matchesRole && matchesSector && matchesClass;
+      }),
+    [users, searchTerm, roleFilter, sectorFilter, selectedClassLookup],
+  );
 
   const getClassesBySector = (sector: Sector | "") =>
     classes.filter((c) => !sector || c.sector === sector);
@@ -236,6 +273,19 @@ export default function UsersPage() {
 
   const handleEdit = (user: UserWithTeacherData) => {
     setSelectedUser(user);
+
+    const normalizedSector =
+      (user.teacher_sector && sectors.includes(user.teacher_sector as Sector)
+        ? (user.teacher_sector as Sector)
+        : null) ??
+      (user.teacher_sector_label ? resolveSector(user.teacher_sector_label) : null);
+
+    const classMatch = user.teacher_class_id
+      ? classes.find((cls) => cls.id === user.teacher_class_id)
+      : undefined;
+
+    const resolvedSector: Sector | "" = normalizedSector ?? classMatch?.sector ?? "";
+
     setFormData({
       username: user.username,
       password: "",
@@ -245,7 +295,7 @@ export default function UsersPage() {
       date_of_birth: user.date_of_birth || "",
       phone: user.phone || "",
       address: user.address || "",
-      sector: (user.teacher_sector as Sector) || "",
+      sector: resolvedSector,
       class_id: user.teacher_class_id || "",
     });
     setShowEditModal(true);
@@ -440,11 +490,27 @@ export default function UsersPage() {
 
           <select
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            disabled={!sectorFilter}
+            value={classFilter || CLASS_PLACEHOLDER_VALUE}
+            onChange={(e) => {
+              const rawValue = e.target.value;
+              if (rawValue === CLASS_PLACEHOLDER_VALUE) {
+                setClassFilter("");
+                return;
+              }
+
+              setClassFilter(rawValue);
+
+              if (rawValue) {
+                const selectedClass = classes.find((cls) => cls.id === rawValue);
+                if (selectedClass?.sector && sectorFilter !== selectedClass.sector) {
+                  setSectorFilter(selectedClass.sector);
+                }
+              }
+            }}
           >
-            <option value="">Tất cả lớp</option>
+            <option value={CLASS_PLACEHOLDER_VALUE} disabled>
+              Chọn lớp
+            </option>
             {classesForFilterDropdown.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {formatLabel(cls.name)}
