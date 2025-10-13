@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
-import type { Sector } from "@/types/database";
+import type { Class, Sector } from "@/types/database";
 import {
   fetchUsers,
   createUser,
@@ -152,23 +152,11 @@ export default function UsersPage() {
       }
 
       if (classesResult.data) {
-        const normalizedClasses: ClassOption[] = classesResult.data.map((cls: any) => {
-          const resolvedSector =
-            resolveSector(cls.sector) ??
-            resolveSector(cls.sector_code) ??
-            resolveSector(cls.sector_name) ??
-            resolveSector(cls.branch) ??
-            resolveSector(cls.branch_code) ??
-            resolveSector(cls.branch_name) ??
-            resolveSector(cls.name) ??
-            null;
-
-          return {
-            id: cls.id,
-            name: cls.name ?? cls.id,
-            sector: resolvedSector,
-          };
-        });
+        const normalizedClasses: ClassOption[] = classesResult.data.map((cls: Class) => ({
+          id: cls.id,
+          name: cls.name ?? cls.id,
+          sector: cls.sector,
+        }));
 
         setClasses(normalizedClasses);
       }
