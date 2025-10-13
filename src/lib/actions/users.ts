@@ -3,6 +3,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { normalizeAppRole, roleToDbValue } from "@/lib/auth/roles";
 import type { User, CreateUserInput, UpdateUserInput, Sector } from "@/types/database";
 
@@ -373,12 +374,14 @@ export async function createUser(
   input: CreateUserInput
 ): Promise<{ data: User | null; error: string | null }> {
   try {
+    // Use admin client for creating auth users
+    const adminClient = createSupabaseAdminClient();
     const supabase = await createSupabaseServerClient();
 
     // Create auth user first
     const phoneEmail = `${input.phone.trim()}@phone.local`.toLowerCase();
     const { data: authData, error: authError } =
-      await supabase.auth.admin.createUser({
+      await adminClient.auth.admin.createUser({
         email: phoneEmail,
         password: input.password,
         email_confirm: true,
@@ -406,7 +409,7 @@ export async function createUser(
 
     if (profileError) {
       // Rollback: delete the auth user
-      await supabase.auth.admin.deleteUser(authData.user.id);
+      await adminClient.auth.admin.deleteUser(authData.user.id);
       return { data: null, error: profileError.message };
     }
 
@@ -467,6 +470,7 @@ export async function updateUser(
 ): Promise<{ data: User | null; error: string | null }> {
   try {
     const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClient();
 
     // Prepare update data for user_profiles
     const updateData: any = {};
@@ -492,7 +496,7 @@ export async function updateUser(
 
     // Update password if provided
     if (input.password) {
-      const { error: passwordError } = await supabase.auth.admin.updateUserById(
+      const { error: passwordError } = await adminClient.auth.admin.updateUserById(
         userId,
         { password: input.password }
       );
@@ -583,6 +587,7 @@ export async function updateUserStatus(
 ): Promise<{ success: boolean; error: string | null }> {
   try {
     const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClient();
 
     const { error } = await supabase
       .from("user_profiles")
@@ -595,11 +600,11 @@ export async function updateUserStatus(
 
     // Also update auth user status
     if (status === "INACTIVE") {
-      await supabase.auth.admin.updateUserById(userId, {
+      await adminClient.auth.admin.updateUserById(userId, {
         ban_duration: "876000h", // 100 years
       });
     } else {
-      await supabase.auth.admin.updateUserById(userId, {
+      await adminClient.auth.admin.updateUserById(userId, {
         ban_duration: "none",
       });
     }
