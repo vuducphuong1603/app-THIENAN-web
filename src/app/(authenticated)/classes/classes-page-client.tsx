@@ -3,7 +3,7 @@
 import { Plus, Search, Trash2, Users, Eye, Loader2, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,14 @@ type AvailableTeacher = {
   is_primary: boolean;
 };
 
-const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
+type UpdateClassPayload = {
+  classId: string;
+  name: string;
+  sector: Sector;
+  assignedTeachers: TeacherAssignment[];
+  previousTeachers: TeacherAssignment[];
+  displayName: string;
+};
 
 const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
   CHIEN: "CHIÊN",
@@ -39,19 +46,19 @@ const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
   NGHIA: "NGHĨA",
 };
 
+const SECTOR_LABELS: Record<Sector, string> = {
+  "CHIÊN": "Chiên",
+  "ẤU": "Ấu",
+  "THIẾU": "Thiếu",
+  "NGHĨA": "Nghĩa",
+};
+
 function normalizeText(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z0-9]/g, "")
     .toUpperCase();
-}
-
-function isIgnorableSupabaseError(error?: { code?: string }) {
-  if (!error?.code) {
-    return false;
-  }
-  return SUPABASE_IGNORED_ERROR_CODES.has(error.code);
 }
 
 function tryResolveSector(value?: string | null): Sector | null {
@@ -98,6 +105,7 @@ export default function ClassesPage({
 }: ClassesPageProps) {
   const router = useRouter();
   const { supabase } = useAuth();
+  const queryClient = useQueryClient();
 
   const {
     data: classRows = [],
@@ -329,6 +337,7 @@ export default function ClassesPage({
 
   const [teacherSearchTerm, setTeacherSearchTerm] = useState("");
   const [assignedTeachers, setAssignedTeachers] = useState<TeacherAssignment[]>([]);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const sectors: Sector[] = ["CHIÊN", "ẤU", "THIẾU", "NGHĨA"];
 
@@ -364,8 +373,24 @@ export default function ClassesPage({
       name: classItem.name,
       sector: classItem.sector,
     });
-    setAssignedTeachers(classItem.teachers);
+    setAssignedTeachers(
+      classItem.teachers.map((assignment) => ({
+        ...assignment,
+        teacher: { ...assignment.teacher },
+      })),
+    );
+    setTeacherSearchTerm("");
+    setFormError(null);
     setShowEditModal(true);
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setSelectedClass(null);
+    setTeacherSearchTerm("");
+    setAssignedTeachers([]);
+    setFormError(null);
+    setFormData({ name: "", sector: "" as Sector | "" });
   };
 
   const handleViewStudents = (classItem: ClassWithTeachers) => {
@@ -380,9 +405,12 @@ export default function ClassesPage({
   };
 
   const handleAssignTeacher = (teacher: typeof availableTeachers[0], isPrimary: boolean) => {
+    if (!selectedClass) return;
+    if (updateClassMutation.isPending) return;
+    setFormError(null);
     const newAssignment: TeacherAssignment = {
-      id: `ta-new-${Date.now()}`,
-      class_id: selectedClass?.id || "",
+      id: `${teacher.id}-${selectedClass.id}`,
+      class_id: selectedClass.id,
       teacher_id: teacher.id,
       is_primary: isPrimary,
       teacher: {
@@ -392,11 +420,153 @@ export default function ClassesPage({
         phone: teacher.phone,
       },
     };
-    setAssignedTeachers([...assignedTeachers, newAssignment]);
+    setAssignedTeachers((prev) => [...prev, newAssignment]);
   };
 
   const handleRemoveTeacher = (assignmentId: string) => {
-    setAssignedTeachers(assignedTeachers.filter((ta) => ta.id !== assignmentId));
+    if (updateClassMutation.isPending) return;
+    setFormError(null);
+    setAssignedTeachers((prev) => prev.filter((ta) => ta.id !== assignmentId));
+  };
+
+  const updateClassMutation = useMutation<void, Error, UpdateClassPayload>({
+    mutationFn: async ({
+      classId,
+      name,
+      sector,
+      assignedTeachers: nextTeachers,
+      previousTeachers,
+      displayName,
+    }) => {
+      const trimmedName = name.trim();
+      const classUpdates: Record<string, unknown> = {};
+
+      if (trimmedName.length > 0) {
+        classUpdates.name = trimmedName;
+      }
+
+      if (sector) {
+        classUpdates.sector = sector;
+      }
+
+      if (Object.keys(classUpdates).length > 0) {
+        classUpdates.updated_at = new Date().toISOString();
+        const { error: classError } = await supabase
+          .from("classes")
+          .update(classUpdates)
+          .eq("id", classId);
+
+        if (classError) {
+          console.error("Supabase class update failed:", classError);
+          throw new Error(`Không thể cập nhật lớp trong Supabase: ${classError.message}`);
+        }
+      }
+
+      const classRow = classRows.find((cls) => cls.id === classId);
+      const resolvedClassName =
+        trimmedName ||
+        classRow?.name?.trim() ||
+        (classRow?.code ? String(classRow.code).trim() : "") ||
+        displayName ||
+        classId;
+      const resolvedClassCode =
+        classRow?.code !== undefined && classRow?.code !== null
+          ? String(classRow.code).trim()
+          : classId;
+      const sectorLabel = SECTOR_LABELS[sector] ?? sector;
+      const timestamp = new Date().toISOString();
+
+      const previousIds = new Set(previousTeachers.map((teacher) => teacher.teacher_id));
+      const nextIds = new Set(nextTeachers.map((teacher) => teacher.teacher_id));
+      const removedIds = Array.from(previousIds).filter((id) => !nextIds.has(id));
+
+      for (const teacherId of removedIds) {
+        const { error: removeError } = await supabase
+          .from("teachers")
+          .update({
+            class_id: null,
+            class_name: null,
+            class_code: null,
+            sector: null,
+            updated_at: timestamp,
+          })
+          .eq("id", teacherId);
+
+        if (removeError) {
+          console.error("Supabase teacher unassignment failed:", removeError);
+          throw new Error(`Không thể gỡ giáo lý viên khỏi lớp: ${removeError.message}`);
+        }
+      }
+
+      for (const assignment of nextTeachers) {
+        const { error: updateError } = await supabase
+          .from("teachers")
+          .update({
+            class_id: classId,
+            class_name: resolvedClassName,
+            class_code: resolvedClassCode,
+            sector: sectorLabel,
+            updated_at: timestamp,
+          })
+          .eq("id", assignment.teacher_id);
+
+        if (updateError) {
+          console.error("Supabase teacher assignment failed:", updateError);
+          throw new Error(`Không thể đồng bộ giáo lý viên tới lớp: ${updateError.message}`);
+        }
+      }
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["classes", "list"] }),
+        queryClient.invalidateQueries({ queryKey: ["teachers", "list"] }),
+        queryClient.invalidateQueries({ queryKey: ["students", "classCounts"] }),
+      ]);
+    },
+  });
+
+  const handleUpdate = () => {
+    if (!selectedClass) {
+      return;
+    }
+
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
+      setFormError("Vui lòng nhập tên lớp.");
+      return;
+    }
+
+    if (!formData.sector) {
+      setFormError("Vui lòng chọn ngành.");
+      return;
+    }
+
+    setFormError(null);
+
+    updateClassMutation.mutate(
+      {
+        classId: selectedClass.id,
+        name: trimmedName,
+        sector: formData.sector,
+        assignedTeachers,
+        previousTeachers: selectedClass.teachers,
+        displayName: selectedClass.name,
+      },
+      {
+        onSuccess: () => {
+          setFormData({ name: "", sector: "" as Sector | "" });
+          setAssignedTeachers([]);
+          setTeacherSearchTerm("");
+          setSelectedClass(null);
+          setShowEditModal(false);
+        },
+        onError: (error) => {
+          setFormError(
+            error instanceof Error ? error.message : "Không thể cập nhật lớp. Vui lòng thử lại.",
+          );
+        },
+      },
+    );
   };
 
   const filteredAvailableTeachers = availableTeachers.filter(
@@ -564,7 +734,7 @@ export default function ClassesPage({
               ...sectors.map((s) => ({ value: s, label: `Ngành ${s}` })),
             ]}
             value={formData.sector}
-            onChange={(e) => setFormData({ ...formData, sector: e.target.value as Sector })}
+            onChange={(e) => setFormData({ ...formData, sector: e.target.value as Sector | "" })}
           />
         </div>
         <div className="mt-6 flex justify-end gap-2">
@@ -578,7 +748,7 @@ export default function ClassesPage({
       {/* Edit Class Modal */}
       <Modal
         isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
+        onClose={handleCloseEditModal}
         title="Chỉnh sửa lớp"
         description="Cập nhật thông tin lớp và phân công giáo lý viên"
         size="xl"
@@ -589,7 +759,10 @@ export default function ClassesPage({
               label="Tên lớp"
               placeholder="Tên lớp"
               value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              onChange={(e) => {
+                setFormError(null);
+                setFormData({ ...formData, name: e.target.value });
+              }}
             />
             <Select
               label="Ngành"
@@ -598,7 +771,10 @@ export default function ClassesPage({
                 ...sectors.map((s) => ({ value: s, label: `Ngành ${s}` })),
               ]}
               value={formData.sector}
-              onChange={(e) => setFormData({ ...formData, sector: e.target.value as Sector })}
+              onChange={(e) => {
+                setFormError(null);
+                setFormData({ ...formData, sector: e.target.value as Sector | "" });
+              }}
             />
           </div>
 
@@ -638,7 +814,8 @@ export default function ClassesPage({
                       </div>
                       <button
                         onClick={() => handleRemoveTeacher(assignment.id)}
-                        className="text-xs text-red-600 hover:text-red-700"
+                        disabled={updateClassMutation.isPending}
+                        className="text-xs text-red-600 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Gỡ bỏ
                       </button>
@@ -670,13 +847,15 @@ export default function ClassesPage({
                       <div className="flex gap-1">
                         <button
                           onClick={() => handleAssignTeacher(teacher, true)}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                          disabled={updateClassMutation.isPending}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Chính
                         </button>
                         <button
                           onClick={() => handleAssignTeacher(teacher, false)}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100"
+                          disabled={updateClassMutation.isPending}
+                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           Phụ
                         </button>
@@ -689,11 +868,30 @@ export default function ClassesPage({
           </div>
         </div>
 
+        {formError && (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {formError}
+          </div>
+        )}
+
         <div className="mt-6 flex justify-end gap-2">
-          <Button variant="outline" onClick={() => setShowEditModal(false)}>
+          <Button
+            variant="outline"
+            onClick={handleCloseEditModal}
+            disabled={updateClassMutation.isPending}
+          >
             Hủy
           </Button>
-          <Button onClick={() => setShowEditModal(false)}>Cập nhật</Button>
+          <Button onClick={handleUpdate} disabled={updateClassMutation.isPending}>
+            {updateClassMutation.isPending ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Đang cập nhật...
+              </span>
+            ) : (
+              "Cập nhật"
+            )}
+          </Button>
         </div>
       </Modal>
     </div>

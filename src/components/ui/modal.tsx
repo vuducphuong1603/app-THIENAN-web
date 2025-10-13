@@ -23,9 +23,9 @@ export function Modal({ isOpen, onClose, title, description, children, size = "m
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4">
       <div
-        className={`w-full ${sizeClasses[size]} rounded-2xl bg-white shadow-xl`}
+        className={`flex w-full ${sizeClasses[size]} max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-2xl bg-white shadow-xl`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between border-b border-slate-200 p-6">
@@ -41,7 +41,7 @@ export function Modal({ isOpen, onClose, title, description, children, size = "m
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="p-6">{children}</div>
+        <div className="flex-1 overflow-y-auto p-6">{children}</div>
       </div>
     </div>
   );
