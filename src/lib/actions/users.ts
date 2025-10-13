@@ -404,7 +404,8 @@ export async function createUser(
     const dbRole = roleToDbValue(normalizeAppRole(input.role));
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
-      .insert({
+      // Trigger `handle_new_user` may have already inserted a row; upsert keeps data in sync
+      .upsert({
         id: authData.user.id,
         email: phoneEmail,
         phone: input.phone,
@@ -412,7 +413,7 @@ export async function createUser(
         full_name: input.full_name,
         saint_name: input.saint_name || null,
         status: "ACTIVE",
-      })
+      }, { onConflict: "id" })
       .select()
       .single();
 
