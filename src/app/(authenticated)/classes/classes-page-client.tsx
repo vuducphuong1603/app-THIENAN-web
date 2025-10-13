@@ -1,9 +1,11 @@
 "use client";
 
 import { Plus, Search, Trash2, Users, Eye, Loader2, AlertTriangle } from "lucide-react";
+import clsx from "clsx";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -323,6 +325,16 @@ export default function ClassesPage({
     return { classes: sortedClasses, availableTeachers: resolvedAvailableTeachers };
   }, [classRows, sectorRows, studentRows, teacherRows]);
 
+  const teacherLookupById = useMemo(() => {
+    const map = new Map<string, TeacherRow>();
+    teacherRows.forEach((teacher) => {
+      if (teacher.id) {
+        map.set(teacher.id, teacher);
+      }
+    });
+    return map;
+  }, [teacherRows]);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [sectorFilter, setSectorFilter] = useState("");
 
@@ -476,44 +488,95 @@ export default function ClassesPage({
       const sectorLabel = SECTOR_LABELS[sector] ?? sector;
       const timestamp = new Date().toISOString();
 
+      const safelyUpdateTeacher = async (
+        teacherId: string,
+        payload: Record<string, unknown>,
+        failureMessage: string,
+      ): Promise<TeacherRow | null> => {
+        const teacherRecord = teacherLookupById.get(teacherId) ?? null;
+        const identifiers: Array<{ column: "id" | "phone"; value: string }> = [];
+
+        if (teacherRecord?.id) {
+          identifiers.push({ column: "id", value: teacherRecord.id });
+        }
+
+        const phone = teacherRecord?.phone?.trim();
+        if (phone) {
+          identifiers.push({ column: "phone", value: phone });
+        }
+
+        if (!identifiers.some((identifier) => identifier.column === "id") && teacherId) {
+          identifiers.push({ column: "id", value: teacherId });
+        }
+
+        if (identifiers.length === 0) {
+          throw new Error(
+            `${failureMessage}: Không có thông tin (id/phone) để xác định giáo lý viên.`,
+          );
+        }
+
+        let lastError: PostgrestError | null = null;
+
+        for (const identifier of identifiers) {
+          const { data, error } = await supabase
+            .from("teachers")
+            .update(payload)
+            .eq(identifier.column, identifier.value)
+            .select("id")
+            .limit(1);
+
+          if (error) {
+            lastError = error;
+            continue;
+          }
+
+          if (Array.isArray(data) && data.length > 0) {
+            return teacherRecord;
+          }
+        }
+
+        if (lastError) {
+          console.error("Supabase teacher update failed:", lastError);
+          throw new Error(`${failureMessage}: ${lastError.message}`);
+        }
+
+        throw new Error(
+          `${failureMessage}: Không tìm thấy giáo lý viên với ${identifiers
+            .map((identifier) => `${identifier.column}=${identifier.value}`)
+            .join(" hoặc ")}.`,
+        );
+      };
+
       const previousIds = new Set(previousTeachers.map((teacher) => teacher.teacher_id));
       const nextIds = new Set(nextTeachers.map((teacher) => teacher.teacher_id));
       const removedIds = Array.from(previousIds).filter((id) => !nextIds.has(id));
 
       for (const teacherId of removedIds) {
-        const { error: removeError } = await supabase
-          .from("teachers")
-          .update({
+        await safelyUpdateTeacher(
+          teacherId,
+          {
             class_id: null,
             class_name: null,
             class_code: null,
             sector: null,
             updated_at: timestamp,
-          })
-          .eq("id", teacherId);
-
-        if (removeError) {
-          console.error("Supabase teacher unassignment failed:", removeError);
-          throw new Error(`Không thể gỡ giáo lý viên khỏi lớp: ${removeError.message}`);
-        }
+          },
+          "Không thể gỡ giáo lý viên khỏi lớp",
+        );
       }
 
       for (const assignment of nextTeachers) {
-        const { error: updateError } = await supabase
-          .from("teachers")
-          .update({
+        await safelyUpdateTeacher(
+          assignment.teacher_id,
+          {
             class_id: classId,
             class_name: resolvedClassName,
             class_code: resolvedClassCode,
             sector: sectorLabel,
             updated_at: timestamp,
-          })
-          .eq("id", assignment.teacher_id);
-
-        if (updateError) {
-          console.error("Supabase teacher assignment failed:", updateError);
-          throw new Error(`Không thể đồng bộ giáo lý viên tới lớp: ${updateError.message}`);
-        }
+          },
+          "Không thể đồng bộ giáo lý viên tới lớp",
+        );
       }
     },
     onSuccess: async () => {
@@ -808,7 +871,12 @@ export default function ClassesPage({
                         <p className="font-medium text-slate-800">
                           {getTeacherName(assignment.teacher)}
                         </p>
-                        <p className="text-xs text-slate-500">
+                        <p
+                          className={clsx(
+                            "text-xs font-semibold",
+                            assignment.is_primary ? "text-emerald-600" : "text-sky-600",
+                          )}
+                        >
                           {assignment.is_primary ? "Chính" : "Phụ"}
                         </p>
                       </div>
@@ -839,23 +907,44 @@ export default function ClassesPage({
                       <div className="flex-1">
                         <p className="font-medium text-slate-800">{getTeacherName(teacher)}</p>
                         <p className="text-xs text-slate-500">
-                          {teacher.current_class
-                            ? `Đang ${teacher.is_primary ? "chính" : "phụ"} ${teacher.current_class}`
-                            : "Chưa có lớp"}
+                          {teacher.current_class ? (
+                            <>
+                              Đang{" "}
+                              <span
+                                className={clsx(
+                                  "font-semibold",
+                                  teacher.is_primary ? "text-emerald-600" : "text-sky-600",
+                                )}
+                              >
+                                {teacher.is_primary ? "chính" : "phụ"}
+                              </span>{" "}
+                              {teacher.current_class}
+                            </>
+                          ) : (
+                            "Chưa có lớp"
+                          )}
                         </p>
                       </div>
                       <div className="flex gap-1">
                         <button
                           onClick={() => handleAssignTeacher(teacher, true)}
                           disabled={updateClassMutation.isPending}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className={clsx(
+                            "rounded-md border px-2 py-1 text-xs font-semibold transition-colors",
+                            "border-emerald-500 text-emerald-600 hover:bg-emerald-50",
+                            "disabled:cursor-not-allowed disabled:opacity-60",
+                          )}
                         >
                           Chính
                         </button>
                         <button
                           onClick={() => handleAssignTeacher(teacher, false)}
                           disabled={updateClassMutation.isPending}
-                          className="rounded-md border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className={clsx(
+                            "rounded-md border px-2 py-1 text-xs font-semibold transition-colors",
+                            "border-sky-500 text-sky-600 hover:bg-sky-50",
+                            "disabled:cursor-not-allowed disabled:opacity-60",
+                          )}
                         >
                           Phụ
                         </button>
