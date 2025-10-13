@@ -244,7 +244,7 @@ export default function UsersPage() {
   };
 
   const handleCreate = () => {
-    setFormData({
+    const initialFormData = {
       username: "",
       password: "",
       role: "",
@@ -255,7 +255,9 @@ export default function UsersPage() {
       address: "",
       sector: "",
       class_id: "",
-    });
+    };
+    console.log("Opening create modal with initial form data:", initialFormData);
+    setFormData(initialFormData);
     setShowCreateModal(true);
   };
 
@@ -290,13 +292,38 @@ export default function UsersPage() {
   };
 
   const handleSubmitCreate = async () => {
-    if (!formData.phone || !formData.password || !formData.full_name || !formData.role) {
-      alert("Vui lòng điền đầy đủ thông tin bắt buộc");
-      return;
-    }
-
-    setIsSubmitting(true);
     try {
+      // Debug logging
+      console.log("handleSubmitCreate called");
+      console.log("Form data:", formData);
+
+      // Validate required fields
+      const missingFields = [];
+      if (!formData.phone) missingFields.push("Số điện thoại");
+      if (!formData.password) missingFields.push("Mật khẩu");
+      if (!formData.full_name) missingFields.push("Họ và tên");
+      if (!formData.role) missingFields.push("Vai trò");
+
+      if (missingFields.length > 0) {
+        alert(`Vui lòng điền đầy đủ thông tin bắt buộc:\n- ${missingFields.join("\n- ")}`);
+        console.log("Missing fields:", missingFields);
+        return;
+      }
+
+      setIsSubmitting(true);
+      console.log("Calling createUser with data:", {
+        username: formData.phone,
+        password: "***",
+        phone: formData.phone,
+        role: formData.role,
+        saint_name: formData.saint_name,
+        full_name: formData.full_name,
+        date_of_birth: formData.date_of_birth,
+        address: formData.address,
+        sector: formData.sector || undefined,
+        class_id: formData.class_id || undefined,
+      });
+
       const result = await createUser({
         username: formData.phone, // Use phone as username
         password: formData.password,
@@ -311,6 +338,7 @@ export default function UsersPage() {
       });
 
       if (result.error) {
+        console.error("Server returned error:", result.error);
         alert(`Lỗi: ${result.error}`);
         return;
       }
@@ -320,7 +348,7 @@ export default function UsersPage() {
       await loadData(); // Reload users
     } catch (error) {
       console.error("Error creating user:", error);
-      alert("Có lỗi xảy ra khi tạo người dùng");
+      alert(`Có lỗi xảy ra khi tạo người dùng: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -593,7 +621,10 @@ export default function UsersPage() {
             label="Số điện thoại (làm username)"
             placeholder="0912345678"
             value={formData.phone}
-            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+            onChange={(e) => {
+              console.log("Phone entered:", e.target.value);
+              setFormData({ ...formData, phone: e.target.value });
+            }}
           />
           <Input
             label="Mật khẩu"
@@ -606,7 +637,10 @@ export default function UsersPage() {
             label="Vai trò"
             options={[{ value: "", label: "Chọn vai trò" }, ...roles]}
             value={formData.role}
-            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            onChange={(e) => {
+              console.log("Role selected:", e.target.value);
+              setFormData({ ...formData, role: e.target.value });
+            }}
           />
           <Input
             label="Tên thánh"
@@ -662,7 +696,13 @@ export default function UsersPage() {
           <Button variant="outline" onClick={() => setShowCreateModal(false)}>
             Hủy
           </Button>
-          <Button onClick={handleSubmitCreate} disabled={isSubmitting}>
+          <Button
+            onClick={() => {
+              console.log("Tạo mới button clicked!");
+              handleSubmitCreate();
+            }}
+            disabled={isSubmitting}
+          >
             {isSubmitting ? "Đang tạo..." : "Tạo mới"}
           </Button>
         </div>
@@ -689,7 +729,10 @@ export default function UsersPage() {
             label="Vai trò"
             options={[{ value: "", label: "Chọn vai trò" }, ...roles]}
             value={formData.role}
-            onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+            onChange={(e) => {
+              console.log("Role selected:", e.target.value);
+              setFormData({ ...formData, role: e.target.value });
+            }}
           />
           <Input
             label="Tên thánh"

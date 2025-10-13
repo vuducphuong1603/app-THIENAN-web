@@ -375,7 +375,16 @@ export async function createUser(
 ): Promise<{ data: User | null; error: string | null }> {
   try {
     // Use admin client for creating auth users
-    const adminClient = createSupabaseAdminClient();
+    let adminClient;
+    try {
+      adminClient = createSupabaseAdminClient();
+    } catch (error) {
+      console.error("Failed to create admin client:", error);
+      return {
+        data: null,
+        error: "Service configuration error: Unable to create users. Please contact your administrator to configure the SUPABASE_SERVICE_ROLE_KEY."
+      };
+    }
     const supabase = await createSupabaseServerClient();
 
     // Create auth user first

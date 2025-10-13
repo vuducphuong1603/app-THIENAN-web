@@ -13,14 +13,10 @@ if (!supabaseUrl) {
  * Use this ONLY for admin operations like creating users.
  */
 export const createSupabaseAdminClient = () => {
-  if (!supabaseServiceRoleKey) {
-    console.warn("SUPABASE_SERVICE_ROLE_KEY not configured. Admin operations will use anon key (limited functionality).");
-    // Fallback to anon key if service role key is not available
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!supabaseAnonKey) {
-      throw new Error("Missing both service role key and anon key");
-    }
-    return createClient(supabaseUrl, supabaseAnonKey);
+  if (!supabaseServiceRoleKey || supabaseServiceRoleKey === 'your_actual_service_role_key_here') {
+    const errorMsg = "SUPABASE_SERVICE_ROLE_KEY is not configured. This key is required for admin operations like creating users. Please add it to your .env.local file.";
+    console.error(errorMsg);
+    throw new Error(errorMsg);
   }
 
   return createClient(supabaseUrl, supabaseServiceRoleKey, {
