@@ -10,7 +10,6 @@ import type { User, CreateUserInput, UpdateUserInput, Sector } from "@/types/dat
 export type UserWithTeacherData = User & {
   teacher_sector?: Sector | null;
   teacher_sector_label?: string | null;
-  teacher_class_id?: string | null;
   teacher_class_code?: string | null;
   class_name?: string | null;
 };
@@ -25,9 +24,8 @@ const SECTOR_LABELS: Record<Sector, string> = {
 type TeacherInfo = {
   sectorCode: Sector | null;
   sectorLabel: string | null;
-  classId: string | null;
-  className: string | null;
   classCode: string | null;
+  className: string | null;
   birthDate: string | null;
   address: string | null;
 };
@@ -35,9 +33,8 @@ type TeacherInfo = {
 type TeacherRowForLookup = {
   phone?: string | null;
   sector?: string | null;
-  class_id?: string | null;
-  class_name?: string | null;
   class_code?: string | null;
+  class_name?: string | null;
   birth_date?: string | null;
   address?: string | null;
 };
@@ -155,10 +152,10 @@ function buildClassLookup(rows: Array<{ id: string; name?: string | null; sector
 }
 
 function resolveClassInfo(
-  teacher: { class_id?: string | null; class_code?: string | null; class_name?: string | null },
+  teacher: { class_code?: string | null; class_name?: string | null },
   classLookup: Map<string, ClassLookupValue>,
 ): ClassLookupValue | null {
-  const candidates = [teacher.class_id, teacher.class_code, teacher.class_name];
+  const candidates = [teacher.class_code, teacher.class_name];
 
   for (const candidate of candidates) {
     const key = normalizeKey(candidate);
@@ -190,7 +187,7 @@ async function fetchTeacherInfoMap(
 
   const { data: teachers, error: teachersError } = await supabase
     .from("teachers")
-    .select("phone, sector, class_id, class_name, class_code, birth_date, address");
+    .select("phone, sector, class_code, class_name, birth_date, address");
 
   if (teachersError) {
     console.error("Error fetching teacher records:", teachersError);
@@ -227,8 +224,8 @@ async function fetchTeacherInfoMap(
     }
 
     const classInfo = resolveClassInfo(teacher, classLookup);
-    const classId = teacher.class_id ?? classInfo?.id ?? null;
-    const className = classInfo?.name ?? teacher.class_name ?? teacher.class_code ?? null;
+    const classCode = teacher.class_code ?? classInfo?.id ?? null;
+    const className = classInfo?.name ?? teacher.class_name ?? null;
     const classSectorCode = classInfo?.sector ?? null;
     const sectorInfo = resolveSectorInfo(teacher.sector);
     const finalSectorCode = sectorInfo?.code ?? classSectorCode ?? null;
@@ -239,9 +236,8 @@ async function fetchTeacherInfoMap(
     const teacherInfo: TeacherInfo = {
       sectorCode: finalSectorCode,
       sectorLabel: finalSectorLabel,
-      classId,
+      classCode,
       className,
-      classCode: teacher.class_code ?? classInfo?.id ?? null,
       birthDate: teacher.birth_date ?? null,
       address: teacher.address ?? null,
     };
@@ -380,12 +376,11 @@ export async function fetchUsers(filters?: {
         address: teacherData?.address ?? null,
         status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
         sector: sectorCode,
-        class_id: teacherData?.classId ?? null,
+        class_id: teacherData?.classCode ?? null,  // Map class_code to class_id
         created_at: user.created_at || new Date().toISOString(),
         updated_at: user.updated_at || new Date().toISOString(),
         teacher_sector: sectorCode,
         teacher_sector_label: teacherData?.sectorLabel ?? null,
-        teacher_class_id: teacherData?.classId ?? null,
         teacher_class_code: teacherData?.classCode ?? null,
         class_name: teacherData?.className ?? null,
       };
@@ -402,7 +397,7 @@ export async function fetchUsers(filters?: {
     // Apply class filter (from teacher data)
     if (filters?.class_id) {
       filteredUsers = filteredUsers.filter(
-        (u) => u.teacher_class_id === filters.class_id
+        (u) => u.teacher_class_code === filters.class_id
       );
     }
 
@@ -452,12 +447,11 @@ export async function fetchUserById(
       address: teacherData?.address ?? null,
       status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
       sector: sectorCode,
-      class_id: teacherData?.classId ?? null,
+      class_id: teacherData?.classCode ?? null,  // Map class_code to class_id
       created_at: user.created_at || new Date().toISOString(),
       updated_at: user.updated_at || new Date().toISOString(),
       teacher_sector: sectorCode,
       teacher_sector_label: teacherData?.sectorLabel ?? null,
-      teacher_class_id: teacherData?.classId ?? null,
       teacher_class_code: teacherData?.classCode ?? null,
       class_name: teacherData?.className ?? null,
     };
@@ -550,15 +544,30 @@ export async function createUser(
     };
 
     if (classId) {
-      teacherPayload.class_id = classId;
+      teacherPayload.class_code = classId;  // Map class_id to class_code
       teacherPayload.class_name = resolvedClassName;
+
+      // If no sector specified but class has sector, derive it
+      if (!input.sector) {
+        const { data: classData } = await supabase
+          .from("classes")
+          .select("sector")
+          .eq("id", classId)
+          .single();
+
+        if (classData?.sector) {
+          teacherPayload.sector = SECTOR_LABELS[classData.sector];
+        }
+      }
     }
 
     if (input.sector) {
       teacherPayload.sector = SECTOR_LABELS[input.sector];
     }
 
-    const { error: teacherError } = await supabase.from("teachers").upsert(teacherPayload);
+    const { error: teacherError } = await supabase.from("teachers").upsert(teacherPayload, {
+      onConflict: "phone",
+    });
     if (teacherError) {
       console.error("Failed to upsert teacher record:", teacherError);
     }
@@ -683,10 +692,23 @@ export async function updateUser(
 
       if (input.class_id !== undefined) {
         const trimmedClassId = input.class_id?.trim();
-        teacherUpdate.class_id = trimmedClassId || null;
+        teacherUpdate.class_code = trimmedClassId || null;  // Map class_id to class_code
         teacherUpdate.class_name = trimmedClassId
           ? (await resolveClassNameById(supabase, trimmedClassId)) ?? trimmedClassId
           : null;
+
+        // If class is set but sector is not being updated, derive sector from class
+        if (trimmedClassId && input.sector === undefined) {
+          const { data: classData } = await supabase
+            .from("classes")
+            .select("sector")
+            .eq("id", trimmedClassId)
+            .single();
+
+          if (classData?.sector) {
+            teacherUpdate.sector = SECTOR_LABELS[classData.sector];
+          }
+        }
       }
 
       if (input.address !== undefined) {
@@ -699,7 +721,9 @@ export async function updateUser(
         teacherUpdate.birth_date = birthDate || null;
       }
 
-      const { error: teacherError } = await supabase.from("teachers").upsert(teacherUpdate);
+      const { error: teacherError } = await supabase.from("teachers").upsert(teacherUpdate, {
+        onConflict: "phone",
+      });
       if (teacherError) {
         console.error("Failed to sync teacher record:", teacherError);
       }
