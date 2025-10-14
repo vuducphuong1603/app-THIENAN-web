@@ -16,7 +16,7 @@ import {
   type UserWithTeacherData,
 } from "@/lib/actions/users";
 import { fetchClasses } from "@/lib/actions/classes";
-import { getRoleLabel } from "@/lib/auth/roles";
+import { getRoleLabel, normalizeAppRole } from "@/lib/auth/roles";
 
 const SECTOR_DISPLAY_LABELS: Record<Sector, string> = {
   CHIÊN: "Chiên",
@@ -567,7 +567,7 @@ export default function UsersPage() {
                   <p className="text-sm text-slate-500">{user.phone}</p>
                 </div>
                 <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  {getRoleLabel(user.role as any)}
+                  {getRoleLabel(normalizeAppRole(user.role))}
                 </span>
               </div>
 

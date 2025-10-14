@@ -28,6 +28,18 @@ type TeacherInfo = {
   classId: string | null;
   className: string | null;
   classCode: string | null;
+  birthDate: string | null;
+  address: string | null;
+};
+
+type TeacherRowForLookup = {
+  phone?: string | null;
+  sector?: string | null;
+  class_id?: string | null;
+  class_name?: string | null;
+  class_code?: string | null;
+  birth_date?: string | null;
+  address?: string | null;
 };
 
 type ClassLookupValue = {
@@ -142,7 +154,7 @@ async function fetchTeacherInfoMap(
 
   const { data: teachers, error: teachersError } = await supabase
     .from("teachers")
-    .select("phone, sector, class_name, class_code")
+    .select("phone, sector, class_id, class_name, class_code, birth_date, address")
     .in("phone", normalizedPhones);
 
   if (teachersError) {
@@ -150,7 +162,7 @@ async function fetchTeacherInfoMap(
     return map;
   }
 
-  const teacherRows = Array.isArray(teachers) ? teachers : [];
+  const teacherRows = Array.isArray(teachers) ? (teachers as TeacherRowForLookup[]) : [];
   if (teacherRows.length === 0) {
     return map;
   }
@@ -165,16 +177,25 @@ async function fetchTeacherInfoMap(
 
   const classLookup = buildClassLookup((classRows as Array<{ id: string; name?: string | null }> | null) ?? []);
 
-  teacherRows.forEach((teacher: any) => {
+  teacherRows.forEach((teacher) => {
+    const phone = typeof teacher.phone === "string" ? teacher.phone.trim() : "";
+    if (!phone) {
+      return;
+    }
+
     const sectorInfo = resolveSectorInfo(teacher.sector);
     const classInfo = resolveClassInfo(teacher, classLookup);
+    const classId = teacher.class_id ?? classInfo?.id ?? null;
+    const className = classInfo?.name ?? teacher.class_name ?? teacher.class_code ?? null;
 
-    map.set(teacher.phone, {
+    map.set(phone, {
       sectorCode: sectorInfo?.code ?? null,
       sectorLabel: sectorInfo?.label ?? teacher.sector ?? null,
-      classId: classInfo?.id ?? null,
-      className: classInfo?.name ?? teacher.class_name ?? teacher.class_code ?? null,
+      classId,
+      className,
       classCode: teacher.class_code ?? null,
+      birthDate: teacher.birth_date ?? null,
+      address: teacher.address ?? null,
     });
   });
 
@@ -197,6 +218,31 @@ async function resolveClassNameById(
   }
 
   return data?.name ?? null;
+}
+
+function deriveNameParts(
+  fullName?: string | null,
+): { firstName: string | null; lastName: string | null } {
+  if (!fullName) {
+    return { firstName: null, lastName: null };
+  }
+
+  const normalized = fullName
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (!normalized) {
+    return { firstName: null, lastName: null };
+  }
+
+  const parts = normalized.split(" ");
+  const firstName = parts.pop() ?? null;
+  const lastName = parts.length > 0 ? parts.join(" ") : null;
+
+  return {
+    firstName: firstName ?? null,
+    lastName,
+  };
 }
 
 /**
@@ -272,8 +318,8 @@ export async function fetchUsers(filters?: {
         role: user.role || "catechist",
         saint_name: user.saint_name,
         full_name: user.full_name || "",
-        date_of_birth: null,
-        address: null,
+        date_of_birth: teacherData?.birthDate ?? null,
+        address: teacherData?.address ?? null,
         status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
         sector: sectorCode,
         class_id: teacherData?.classId ?? null,
@@ -344,8 +390,8 @@ export async function fetchUserById(
       role: user.role || "catechist",
       saint_name: user.saint_name,
       full_name: user.full_name || "",
-      date_of_birth: null,
-      address: null,
+      date_of_birth: teacherData?.birthDate ?? null,
+      address: teacherData?.address ?? null,
       status: (user.status as "ACTIVE" | "INACTIVE") || "ACTIVE",
       sector: sectorCode,
       class_id: teacherData?.classId ?? null,
@@ -423,20 +469,35 @@ export async function createUser(
       return { data: null, error: profileError.message };
     }
 
+    const trimmedPhone = input.phone.trim();
+    const trimmedFullName = input.full_name.trim();
+    const saintName = input.saint_name?.trim();
+    const birthDate = input.date_of_birth?.trim();
+    const address = input.address?.trim();
+    const classId = input.class_id?.trim();
+    const { firstName, lastName } = deriveNameParts(trimmedFullName);
+    const resolvedClassName =
+      classId ? (await resolveClassNameById(supabase, classId)) ?? classId : null;
+
     const teacherPayload: Record<string, unknown> = {
-      phone: input.phone,
-      full_name: input.full_name,
-      saint_name: input.saint_name || null,
+      phone: trimmedPhone,
+      full_name: trimmedFullName,
+      first_name: firstName,
+      last_name: lastName,
+      saint_name: saintName || null,
       role: dbRole,
+      status: "teaching",
+      birth_date: birthDate || null,
+      address: address || null,
     };
+
+    if (classId) {
+      teacherPayload.class_id = classId;
+      teacherPayload.class_name = resolvedClassName;
+    }
 
     if (input.sector) {
       teacherPayload.sector = SECTOR_LABELS[input.sector];
-    }
-
-    if (input.class_id) {
-      teacherPayload.class_name =
-        (await resolveClassNameById(supabase, input.class_id)) ?? input.class_id;
     }
 
     const { error: teacherError } = await supabase.from("teachers").upsert(teacherPayload);
@@ -453,8 +514,8 @@ export async function createUser(
         role: profile.role,
         saint_name: profile.saint_name,
         full_name: profile.full_name || "",
-        date_of_birth: null,
-        address: null,
+        date_of_birth: input.date_of_birth ?? null,
+        address: input.address ?? null,
         status: profile.status as "ACTIVE" | "INACTIVE",
         sector: input.sector || null,
         class_id: input.class_id || null,
@@ -483,7 +544,7 @@ export async function updateUser(
     const adminClient = createSupabaseAdminClient();
 
     // Prepare update data for user_profiles
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = {};
     if (input.full_name !== undefined) updateData.full_name = input.full_name;
     if (input.saint_name !== undefined) updateData.saint_name = input.saint_name;
     if (input.phone !== undefined) updateData.phone = input.phone;
@@ -521,19 +582,35 @@ export async function updateUser(
         input.class_id !== undefined ||
         input.full_name !== undefined ||
         input.saint_name !== undefined ||
-        input.role !== undefined);
+        input.role !== undefined ||
+        input.address !== undefined ||
+        input.date_of_birth !== undefined ||
+        input.phone !== undefined);
 
     if (shouldSyncTeacher && profile.phone) {
+      const trimmedProfilePhone = profile.phone.trim();
       const teacherUpdate: Record<string, unknown> = {
-        phone: profile.phone,
+        phone: trimmedProfilePhone || profile.phone,
+        status: "teaching",
       };
 
       if (input.full_name !== undefined) {
-        teacherUpdate.full_name = input.full_name;
+        const trimmedFullName = input.full_name.trim();
+        if (trimmedFullName) {
+          const { firstName, lastName } = deriveNameParts(trimmedFullName);
+          teacherUpdate.full_name = trimmedFullName;
+          teacherUpdate.first_name = firstName;
+          teacherUpdate.last_name = lastName;
+        } else {
+          teacherUpdate.full_name = null;
+          teacherUpdate.first_name = null;
+          teacherUpdate.last_name = null;
+        }
       }
 
       if (input.saint_name !== undefined) {
-        teacherUpdate.saint_name = input.saint_name;
+        const saintName = input.saint_name?.trim();
+        teacherUpdate.saint_name = saintName || null;
       }
 
       if (input.role !== undefined) {
@@ -547,12 +624,21 @@ export async function updateUser(
       }
 
       if (input.class_id !== undefined) {
-        if (input.class_id) {
-          teacherUpdate.class_name =
-            (await resolveClassNameById(supabase, input.class_id)) ?? input.class_id;
-        } else {
-          teacherUpdate.class_name = null;
-        }
+        const trimmedClassId = input.class_id?.trim();
+        teacherUpdate.class_id = trimmedClassId || null;
+        teacherUpdate.class_name = trimmedClassId
+          ? (await resolveClassNameById(supabase, trimmedClassId)) ?? trimmedClassId
+          : null;
+      }
+
+      if (input.address !== undefined) {
+        const trimmedAddress = input.address?.trim();
+        teacherUpdate.address = trimmedAddress || null;
+      }
+
+      if (input.date_of_birth !== undefined) {
+        const birthDate = input.date_of_birth?.trim();
+        teacherUpdate.birth_date = birthDate || null;
       }
 
       const { error: teacherError } = await supabase.from("teachers").upsert(teacherUpdate);
@@ -570,8 +656,8 @@ export async function updateUser(
         role: profile.role,
         saint_name: profile.saint_name,
         full_name: profile.full_name || "",
-        date_of_birth: null,
-        address: null,
+        date_of_birth: input.date_of_birth ?? null,
+        address: input.address ?? null,
         status: profile.status as "ACTIVE" | "INACTIVE",
         sector: input.sector || null,
         class_id: input.class_id || null,
