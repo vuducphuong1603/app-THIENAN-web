@@ -206,7 +206,7 @@ export default function UsersPage() {
         const matchesSector = !sectorFilter || user.teacher_sector === sectorFilter;
         const matchesClass =
           !selectedClassLookup ||
-          selectedClassLookup.has(normalizeForLookup(user.teacher_class_code)) ||
+          selectedClassLookup.has(normalizeForLookup(user.teacher_class_id)) ||
           selectedClassLookup.has(normalizeForLookup(user.class_name));
 
         return matchesSearch && matchesRole && matchesSector && matchesClass;
@@ -269,8 +269,8 @@ export default function UsersPage() {
         : null) ??
       (user.teacher_sector_label ? resolveSector(user.teacher_sector_label) : null);
 
-    const classMatch = user.teacher_class_code
-      ? classes.find((cls) => cls.id === user.teacher_class_code)
+    const classMatch = user.teacher_class_id
+      ? classes.find((cls) => cls.id === user.teacher_class_id)
       : undefined;
 
     const resolvedSector: Sector | "" = normalizedSector ?? classMatch?.sector ?? "";
@@ -285,7 +285,7 @@ export default function UsersPage() {
       phone: user.phone || "",
       address: user.address || "",
       sector: resolvedSector,
-      class_id: user.teacher_class_code || "",
+      class_id: user.teacher_class_id || "",
     });
     setShowEditModal(true);
   };
@@ -422,12 +422,12 @@ export default function UsersPage() {
       return formatLabel(user.class_name);
     }
 
-    if (user.teacher_class_code) {
-      const matchedClass = classes.find((cls) => cls.id === user.teacher_class_code);
+    if (user.teacher_class_id) {
+      const matchedClass = classes.find((cls) => cls.id === user.teacher_class_id);
       if (matchedClass?.name) {
         return formatLabel(matchedClass.name);
       }
-      return formatLabel(user.teacher_class_code);
+      return formatLabel(user.teacher_class_id);
     }
 
     return "Chưa phân công";

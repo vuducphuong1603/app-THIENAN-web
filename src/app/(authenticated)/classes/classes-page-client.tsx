@@ -168,8 +168,7 @@ export default function ClassesPage({
     const resolvedAvailableTeachers: AvailableTeacher[] = sortedTeachers.map((teacher) => {
       const mappedClassName =
         teacher.class_name ??
-        (teacher.class_id ? classNameById.get(teacher.class_id) ?? null : null) ??
-        (teacher.class_code ?? null);
+        (teacher.class_id ? classNameById.get(teacher.class_id) ?? null : null);
 
       return {
         id: teacher.id,
@@ -211,9 +210,6 @@ export default function ClassesPage({
       const keys = new Set<string>();
       if (teacher.class_name) {
         keys.add(normalizeText(teacher.class_name));
-      }
-      if (teacher.class_code) {
-        keys.add(normalizeText(teacher.class_code));
       }
       if (teacher.class_id) {
         keys.add(normalizeText(teacher.class_id));
@@ -481,10 +477,6 @@ export default function ClassesPage({
         (classRow?.code ? String(classRow.code).trim() : "") ||
         displayName ||
         classId;
-      const resolvedClassCode =
-        classRow?.code !== undefined && classRow?.code !== null
-          ? String(classRow.code).trim()
-          : classId;
       const sectorLabel = SECTOR_LABELS[sector] ?? sector;
       const timestamp = new Date().toISOString();
 
@@ -557,7 +549,6 @@ export default function ClassesPage({
           {
             class_id: null,
             class_name: null,
-            class_code: null,
             sector: null,
             updated_at: timestamp,
           },
@@ -571,7 +562,6 @@ export default function ClassesPage({
           {
             class_id: classId,
             class_name: resolvedClassName,
-            class_code: resolvedClassCode,
             sector: sectorLabel,
             updated_at: timestamp,
           },

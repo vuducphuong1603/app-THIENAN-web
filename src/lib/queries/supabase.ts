@@ -57,9 +57,8 @@ export type TeacherRow = {
   last_name: string | null;
   full_name: string | null;
   phone: string | null;
-  class_id?: string | null;
+  class_id: string | null;
   class_name: string | null;
-  class_code: string | null;
   sector: string | null;
 };
 

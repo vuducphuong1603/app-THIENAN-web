@@ -51,7 +51,7 @@ type StudentRow = {
 type TeacherRow = {
   id: string;
   sector?: string | null;
-  class_code?: string | null;
+  class_id?: string | null;
   class_name?: string | null;
 };
 
@@ -313,7 +313,7 @@ export default async function DashboardPage() {
     supabase.from("user_profiles").select("id", { count: "exact", head: true }),
     supabase.from("sectors").select("id, name, code"),
     supabase.from("classes").select("id, name, sector_id"),
-    supabase.from("teachers").select("id, sector, class_code, class_name"),
+    supabase.from("teachers").select("id, sector, class_id, class_name"),
   ]);
 
   const summaryData = summaryResult.data as Partial<SummaryMetrics> | null | undefined;
@@ -436,7 +436,7 @@ export default async function DashboardPage() {
   teacherRows.forEach((teacher) => {
     if (!teacher?.id) return;
 
-    const identifier = resolveSectorIdentifier(teacher.sector, teacher.class_name, teacher.class_code);
+    const identifier = resolveSectorIdentifier(teacher.sector, teacher.class_name, teacher.class_id);
     const recognizedIdentifier =
       identifier && KNOWN_SECTOR_KEYS.has(identifier.key) ? identifier : null;
     const sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, recognizedIdentifier);
