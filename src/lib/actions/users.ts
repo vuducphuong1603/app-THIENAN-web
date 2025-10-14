@@ -45,6 +45,7 @@ type TeacherRowForLookup = {
 type ClassLookupValue = {
   id: string;
   name: string;
+  sector: Sector | null;
 };
 
 const SECTOR_LOOKUP = (() => {
@@ -73,31 +74,68 @@ function normalizeKey(value?: string | null): string {
     .toUpperCase();
 }
 
+function normalizePhoneKey(value?: string | null): string {
+  if (!value) return "";
+
+  const digitsOnly = value.replace(/[^0-9]/g, "");
+  if (!digitsOnly) {
+    return "";
+  }
+
+  if (digitsOnly.startsWith("84") && digitsOnly.length >= 9) {
+    return `0${digitsOnly.slice(2)}`;
+  }
+
+  if (digitsOnly.startsWith("0")) {
+    return digitsOnly;
+  }
+
+  return digitsOnly;
+}
+
 function resolveSectorInfo(raw?: string | null): { code: Sector; label: string } | null {
   const normalized = normalizeKey(raw);
   if (!normalized) {
     return null;
   }
 
-  const code = SECTOR_LOOKUP.get(normalized);
-  if (!code) {
-    return null;
+  const directCode = SECTOR_LOOKUP.get(normalized);
+  if (directCode) {
+    return {
+      code: directCode,
+      label: SECTOR_LABELS[directCode],
+    };
   }
 
-  return {
-    code,
-    label: SECTOR_LABELS[code],
-  };
+  if (normalized.includes("CHIEN")) {
+    return { code: "CHIÊN", label: SECTOR_LABELS["CHIÊN"] };
+  }
+
+  if (normalized.includes("NGHIA")) {
+    return { code: "NGHĨA", label: SECTOR_LABELS["NGHĨA"] };
+  }
+
+  if (normalized.includes("THIEU")) {
+    return { code: "THIẾU", label: SECTOR_LABELS["THIẾU"] };
+  }
+
+  if (normalized.includes("AU")) {
+    return { code: "ẤU", label: SECTOR_LABELS["ẤU"] };
+  }
+
+  return null;
 }
 
-function buildClassLookup(rows: Array<{ id: string; name?: string | null }>): Map<string, ClassLookupValue> {
+function buildClassLookup(rows: Array<{ id: string; name?: string | null; sector?: string | null }>): Map<string, ClassLookupValue> {
   const lookup = new Map<string, ClassLookupValue>();
 
   rows.forEach((cls) => {
     if (!cls?.id) return;
+    const sectorInfo = resolveSectorInfo(cls.sector);
     const info: ClassLookupValue = {
       id: cls.id,
       name: cls.name ?? cls.id,
+      sector: sectorInfo?.code ?? null,
     };
 
     const keys = new Set<string>();
@@ -140,22 +178,19 @@ async function fetchTeacherInfoMap(
 ): Promise<Map<string, TeacherInfo>> {
   const map = new Map<string, TeacherInfo>();
 
-  const normalizedPhones = Array.from(
-    new Set(
-      phones
-        .map((phone) => phone?.trim())
-        .filter((phone): phone is string => Boolean(phone)),
-    ),
+  const normalizedPhoneKeySet = new Set(
+    phones
+      .map((phone) => normalizePhoneKey(phone?.trim()))
+      .filter((phoneKey): phoneKey is string => Boolean(phoneKey)),
   );
 
-  if (normalizedPhones.length === 0) {
+  if (normalizedPhoneKeySet.size === 0) {
     return map;
   }
 
   const { data: teachers, error: teachersError } = await supabase
     .from("teachers")
-    .select("phone, sector, class_id, class_name, class_code, birth_date, address")
-    .in("phone", normalizedPhones);
+    .select("phone, sector, class_id, class_name, class_code, birth_date, address");
 
   if (teachersError) {
     console.error("Error fetching teacher records:", teachersError);
@@ -169,34 +204,54 @@ async function fetchTeacherInfoMap(
 
   const { data: classRows, error: classesError } = await supabase
     .from("classes")
-    .select("id, name");
+    .select("id, name, sector");
 
   if (classesError) {
     console.warn("Error fetching classes for teacher lookup:", classesError.message ?? classesError);
   }
 
-  const classLookup = buildClassLookup((classRows as Array<{ id: string; name?: string | null }> | null) ?? []);
+  const classLookup = buildClassLookup(
+    (classRows as Array<{ id: string; name?: string | null; sector?: string | null }> | null) ?? [],
+  );
 
   teacherRows.forEach((teacher) => {
     const phone = typeof teacher.phone === "string" ? teacher.phone.trim() : "";
-    if (!phone) {
+    const normalizedPhone = normalizePhoneKey(phone);
+
+    if (!phone || !normalizedPhone) {
       return;
     }
 
-    const sectorInfo = resolveSectorInfo(teacher.sector);
+    if (!normalizedPhoneKeySet.has(normalizedPhone)) {
+      return;
+    }
+
     const classInfo = resolveClassInfo(teacher, classLookup);
     const classId = teacher.class_id ?? classInfo?.id ?? null;
     const className = classInfo?.name ?? teacher.class_name ?? teacher.class_code ?? null;
+    const classSectorCode = classInfo?.sector ?? null;
+    const sectorInfo = resolveSectorInfo(teacher.sector);
+    const finalSectorCode = sectorInfo?.code ?? classSectorCode ?? null;
+    const finalSectorLabel =
+      sectorInfo?.label ??
+      (finalSectorCode ? SECTOR_LABELS[finalSectorCode] : teacher.sector ?? null);
 
-    map.set(phone, {
-      sectorCode: sectorInfo?.code ?? null,
-      sectorLabel: sectorInfo?.label ?? teacher.sector ?? null,
+    const teacherInfo: TeacherInfo = {
+      sectorCode: finalSectorCode,
+      sectorLabel: finalSectorLabel,
       classId,
       className,
-      classCode: teacher.class_code ?? null,
+      classCode: teacher.class_code ?? classInfo?.id ?? null,
       birthDate: teacher.birth_date ?? null,
       address: teacher.address ?? null,
-    });
+    };
+
+    map.set(normalizedPhone, teacherInfo);
+
+    const secondaryKey = normalizeKey(phone);
+    if (secondaryKey) {
+      map.set(secondaryKey, teacherInfo);
+    }
   });
 
   return map;
@@ -306,8 +361,11 @@ export async function fetchUsers(filters?: {
     const teacherInfoMap = await fetchTeacherInfoMap(supabase, userPhones);
 
     const usersWithTeacherData: UserWithTeacherData[] = users.map((user) => {
-      const phone = user.phone ? String(user.phone).trim() : "";
-      const teacherData = phone ? teacherInfoMap.get(phone) : undefined;
+    const phone = user.phone ? String(user.phone).trim() : "";
+    const normalizedPhoneKey = normalizePhoneKey(phone);
+    const teacherData = normalizedPhoneKey
+      ? teacherInfoMap.get(normalizedPhoneKey) ?? teacherInfoMap.get(normalizeKey(phone))
+      : undefined;
       const sectorCode = teacherData?.sectorCode ?? null;
 
       return {
