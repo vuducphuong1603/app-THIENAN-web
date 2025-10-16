@@ -90,6 +90,43 @@ function normalizePhoneKey(value?: string | null): string {
   return digitsOnly;
 }
 
+function formatPhoneToE164(phone?: string | null): string | null {
+  if (!phone) return null;
+
+  const trimmed = phone.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("+")) {
+    const digits = trimmed.slice(1).replace(/[^0-9]/g, "");
+    if (digits.length < 8 || digits.length > 15) {
+      return null;
+    }
+    return `+${digits}`;
+  }
+
+  const digitsOnly = trimmed.replace(/[^0-9]/g, "");
+  if (!digitsOnly) {
+    return null;
+  }
+
+  if (digitsOnly.startsWith("84")) {
+    if (digitsOnly.length < 9 || digitsOnly.length > 15) {
+      return null;
+    }
+    return `+${digitsOnly}`;
+  }
+
+  if (digitsOnly.startsWith("0") && digitsOnly.length >= 9 && digitsOnly.length <= 15) {
+    return `+84${digitsOnly.slice(1)}`;
+  }
+
+  if (digitsOnly.length >= 9 && digitsOnly.length <= 15) {
+    return `+${digitsOnly}`;
+  }
+
+  return null;
+}
+
 function resolveSectorInfo(raw?: string | null): { code: Sector; label: string } | null {
   const normalized = normalizeKey(raw);
   if (!normalized) {
@@ -490,13 +527,51 @@ export async function createUser(
     }
     const supabase = await createSupabaseServerClient();
 
+    const trimmedPhone = input.phone.trim();
+    const trimmedFullName = input.full_name.trim();
+    const trimmedUsername = input.username?.trim() || trimmedPhone;
+    const saintName = input.saint_name?.trim();
+    const birthDate = input.date_of_birth?.trim();
+    const address = input.address?.trim();
+    const classId = input.class_id?.trim();
+    const { firstName, lastName } = deriveNameParts(trimmedFullName);
+    const dbRole = roleToDbValue(normalizeAppRole(input.role));
+
+    const phoneEmail = `${trimmedPhone}@phone.local`.toLowerCase();
+    const e164Phone = formatPhoneToE164(trimmedPhone);
+
+    const userMetadata: Record<string, string> = {};
+    if (trimmedFullName) {
+      userMetadata.display_name = trimmedFullName;
+      userMetadata.full_name = trimmedFullName;
+    }
+    if (firstName) {
+      userMetadata.first_name = firstName;
+    }
+    if (lastName) {
+      userMetadata.last_name = lastName;
+    }
+    if (trimmedPhone) {
+      userMetadata.phone = trimmedPhone;
+    }
+    if (e164Phone) {
+      userMetadata.phone_e164 = e164Phone;
+    }
+    userMetadata.username = trimmedUsername;
+    userMetadata.role = dbRole;
+    if (saintName) {
+      userMetadata.saint_name = saintName;
+    }
+
     // Create auth user first
-    const phoneEmail = `${input.phone.trim()}@phone.local`.toLowerCase();
     const { data: authData, error: authError } =
       await adminClient.auth.admin.createUser({
         email: phoneEmail,
         password: input.password,
         email_confirm: true,
+        phone: e164Phone || undefined,
+        phone_confirm: e164Phone ? true : undefined,
+        user_metadata: userMetadata,
       });
 
     if (authError || !authData.user) {
@@ -504,17 +579,16 @@ export async function createUser(
     }
 
     // Create user profile with normalized role
-    const dbRole = roleToDbValue(normalizeAppRole(input.role));
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       // Trigger `handle_new_user` may have already inserted a row; upsert keeps data in sync
       .upsert({
         id: authData.user.id,
         email: phoneEmail,
-        phone: input.phone,
+        phone: trimmedPhone,
         role: dbRole,
-        full_name: input.full_name,
-        saint_name: input.saint_name || null,
+        full_name: trimmedFullName,
+        saint_name: saintName || null,
         status: "ACTIVE",
       }, { onConflict: "id" })
       .select()
@@ -526,13 +600,6 @@ export async function createUser(
       return { data: null, error: profileError.message };
     }
 
-    const trimmedPhone = input.phone.trim();
-    const trimmedFullName = input.full_name.trim();
-    const saintName = input.saint_name?.trim();
-    const birthDate = input.date_of_birth?.trim();
-    const address = input.address?.trim();
-    const classId = input.class_id?.trim();
-    const { firstName, lastName } = deriveNameParts(trimmedFullName);
     const resolvedClassName =
       classId ? (await resolveClassNameById(supabase, classId)) ?? classId : null;
 
