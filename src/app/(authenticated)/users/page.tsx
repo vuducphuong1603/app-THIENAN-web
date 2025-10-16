@@ -70,7 +70,33 @@ type ClassOption = {
   sector: Sector | null;
 };
 
+type FormDataState = {
+  username: string;
+  password: string;
+  role: string;
+  saint_name: string;
+  full_name: string;
+  date_of_birth: string;
+  phone: string;
+  address: string;
+  sector: Sector | "";
+  class_id: string;
+};
+
 const CLASS_PLACEHOLDER_VALUE = "__class_placeholder__";
+
+const createEmptyFormData = (): FormDataState => ({
+  username: "",
+  password: "",
+  role: "",
+  saint_name: "",
+  full_name: "",
+  date_of_birth: "",
+  phone: "",
+  address: "",
+  sector: "",
+  class_id: "",
+});
 
 export default function UsersPage() {
   const [users, setUsers] = useState<UserWithTeacherData[]>([]);
@@ -89,18 +115,7 @@ export default function UsersPage() {
   const [actionUserId, setActionUserId] = useState<string | null>(null);
   const [actionType, setActionType] = useState<"lock" | "delete" | null>(null);
 
-  const [formData, setFormData] = useState({
-    username: "",
-    password: "",
-    role: "",
-    saint_name: "",
-    full_name: "",
-    date_of_birth: "",
-    phone: "",
-    address: "",
-    sector: "" as Sector | "",
-    class_id: "",
-  });
+  const [formData, setFormData] = useState<FormDataState>(createEmptyFormData);
 
   const sectors: Sector[] = ["CHIÊN", "ẤU", "THIẾU", "NGHĨA"];
 
@@ -246,18 +261,7 @@ export default function UsersPage() {
   };
 
   const handleCreate = () => {
-    const initialFormData = {
-      username: "",
-      password: "",
-      role: "",
-      saint_name: "",
-      full_name: "",
-      date_of_birth: "",
-      phone: "",
-      address: "",
-      sector: "",
-      class_id: "",
-    };
+    const initialFormData = createEmptyFormData();
     console.log("Opening create modal with initial form data:", initialFormData);
     setFormData(initialFormData);
     setShowCreateModal(true);
