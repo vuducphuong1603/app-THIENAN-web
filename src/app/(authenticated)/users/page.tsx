@@ -349,6 +349,16 @@ export default function UsersPage() {
         return;
       }
 
+      if (result.data?.id) {
+        const activationResult = await updateUserStatus(result.data.id, "ACTIVE");
+        if (!activationResult.success) {
+          console.error("Failed to activate new user:", activationResult.error);
+          alert(
+            "Tài khoản đã được tạo nhưng chưa thể bật trạng thái hoạt động. Vui lòng kích hoạt thủ công trong danh sách người dùng.",
+          );
+        }
+      }
+
       alert("Thêm người dùng thành công!");
       setShowCreateModal(false);
       await loadData(); // Reload users
