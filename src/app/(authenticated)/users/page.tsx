@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Upload, UserPlus, X } from "lucide-react";
+import { Search, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   createUser,
   updateUser,
   updateUserStatus,
+  deleteUser,
   type UserWithTeacherData,
 } from "@/lib/actions/users";
 import { fetchClasses } from "@/lib/actions/classes";
@@ -85,6 +86,8 @@ export default function UsersPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserWithTeacherData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionUserId, setActionUserId] = useState<string | null>(null);
+  const [actionType, setActionType] = useState<"lock" | "delete" | null>(null);
 
   const [formData, setFormData] = useState({
     username: "",
@@ -391,6 +394,9 @@ export default function UsersPage() {
       return;
     }
 
+    setActionUserId(userId);
+    setActionType("lock");
+
     try {
       const result = await updateUserStatus(userId, "INACTIVE");
 
@@ -404,6 +410,40 @@ export default function UsersPage() {
     } catch (error) {
       console.error("Error locking account:", error);
       alert("Có lỗi xảy ra khi khóa tài khoản");
+    } finally {
+      setActionUserId(null);
+      setActionType(null);
+    }
+  };
+
+  const handleDeleteAccount = async (user: UserWithTeacherData) => {
+    if (
+      !confirm(
+        `Bạn có chắc chắn muốn xóa tài khoản ${user.full_name}? Thao tác này sẽ xóa khỏi Supabase và không thể hoàn tác.`,
+      )
+    ) {
+      return;
+    }
+
+    setActionUserId(user.id);
+    setActionType("delete");
+
+    try {
+      const result = await deleteUser(user.id);
+
+      if (result.error) {
+        alert(`Lỗi: ${result.error}`);
+        return;
+      }
+
+      alert("Đã xóa tài khoản!");
+      await loadData();
+    } catch (error) {
+      console.error("Error deleting account:", error);
+      alert("Có lỗi xảy ra khi xóa tài khoản");
+    } finally {
+      setActionUserId(null);
+      setActionType(null);
     }
   };
 
@@ -585,18 +625,40 @@ export default function UsersPage() {
                 </p>
               </div>
 
-              <div className="mt-4 flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleEdit(user)} fullWidth>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleEdit(user)}
+                  className="flex-1"
+                  disabled={actionUserId === user.id}
+                >
                   Chỉnh sửa
                 </Button>
                 <Button
                   size="sm"
                   variant="danger"
                   onClick={() => handleLockAccount(user.id)}
-                  fullWidth
-                  disabled={user.status === "INACTIVE"}
+                  className="flex-1"
+                  disabled={user.status === "INACTIVE" || actionUserId === user.id}
                 >
-                  Khóa
+                  {actionUserId === user.id && actionType === "lock" ? "Đang khóa..." : "Khóa"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  onClick={() => handleDeleteAccount(user)}
+                  className="flex-1"
+                  disabled={actionUserId === user.id}
+                >
+                  {actionUserId === user.id && actionType === "delete" ? (
+                    "Đang xóa..."
+                  ) : (
+                    <span className="flex items-center justify-center gap-1">
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Xóa
+                    </span>
+                  )}
                 </Button>
               </div>
             </Card>

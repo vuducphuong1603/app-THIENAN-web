@@ -797,10 +797,49 @@ export async function updateUserStatus(
 }
 
 /**
- * Delete user (soft delete by setting status to INACTIVE)
+ * Permanently delete a user from Supabase and related tables.
  */
 export async function deleteUser(
   userId: string
 ): Promise<{ success: boolean; error: string | null }> {
-  return updateUserStatus(userId, "INACTIVE");
+  try {
+    const supabase = await createSupabaseServerClient();
+    const adminClient = createSupabaseAdminClient();
+
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("phone")
+      .eq("id", userId)
+      .single();
+
+    if (profileError && profileError.code !== "PGRST116") {
+      return { success: false, error: profileError.message };
+    }
+
+    const { error: authError } = await adminClient.auth.admin.deleteUser(userId);
+    if (authError) {
+      return { success: false, error: authError.message };
+    }
+
+    const { error: profileDeleteError } = await supabase.from("user_profiles").delete().eq("id", userId);
+    if (profileDeleteError && profileDeleteError.code !== "PGRST116") {
+      return { success: false, error: profileDeleteError.message };
+    }
+
+    const phone = profile?.phone?.trim();
+    if (phone) {
+      const { error: teacherError } = await supabase.from("teachers").delete().eq("phone", phone);
+      if (teacherError) {
+        console.error("Failed to delete teacher record for user:", teacherError);
+      }
+    }
+
+    return { success: true, error: null };
+  } catch (err) {
+    console.error("Error deleting user:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
 }
