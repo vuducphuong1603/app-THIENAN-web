@@ -385,7 +385,6 @@ export default function UsersPage() {
         sector: formData.sector || undefined,
         class_id: formData.class_id || undefined,
         password: formData.password || undefined,
-        status: "ACTIVE",
       });
 
       if (result.error) {
@@ -394,17 +393,6 @@ export default function UsersPage() {
       }
 
       alert("Cập nhật thông tin thành công!");
-
-      if (selectedUser.status !== "ACTIVE") {
-        const activationResult = await updateUserStatus(selectedUser.id, "ACTIVE");
-        if (!activationResult.success) {
-          console.error("Failed to reactivate user after edit:", activationResult.error);
-          alert(
-            "Thông tin đã được cập nhật nhưng không thể bật trạng thái hoạt động. Vui lòng kích hoạt thủ công trong danh sách người dùng.",
-          );
-        }
-      }
-
       setShowEditModal(false);
       await loadData(); // Reload users
     } catch (error) {
