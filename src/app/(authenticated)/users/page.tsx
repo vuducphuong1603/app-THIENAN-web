@@ -373,6 +373,8 @@ export default function UsersPage() {
   const handleSubmitEdit = async () => {
     if (!selectedUser) return;
 
+    console.log("HandleSubmitEdit - selectedUser status before edit:", selectedUser.status);
+
     setIsSubmitting(true);
     try {
       const result = await updateUser(selectedUser.id, {

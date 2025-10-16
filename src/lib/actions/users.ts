@@ -364,6 +364,11 @@ export async function fetchUsers(filters?: {
       : undefined;
       const sectorCode = teacherData?.sectorCode ?? null;
 
+      // Debug: log user status from database
+      if (user.full_name === "Ngọc Ái" || user.full_name?.includes("Teresa")) {
+        console.log("FetchUsers - Raw user.status for Teresa:", user.status);
+      }
+
       return {
         id: user.id,
         username: user.email || user.phone || "",
@@ -620,6 +625,10 @@ export async function updateUser(
     }
     if (input.status !== undefined) updateData.status = input.status;
 
+    // Debug: Log what we're updating
+    console.log("UpdateUser - updateData:", updateData);
+    console.log("UpdateUser - has status in input?", input.status !== undefined);
+
     // Update user profile
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
@@ -631,6 +640,9 @@ export async function updateUser(
     if (profileError) {
       return { data: null, error: profileError.message };
     }
+
+    // Debug: Log what we got back
+    console.log("UpdateUser - profile.status after update:", profile.status);
 
     // Update password if provided
     if (input.password) {
