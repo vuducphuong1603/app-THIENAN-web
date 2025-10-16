@@ -385,6 +385,7 @@ export default function UsersPage() {
         sector: formData.sector || undefined,
         class_id: formData.class_id || undefined,
         password: formData.password || undefined,
+        status: "ACTIVE",
       });
 
       if (result.error) {
