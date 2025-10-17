@@ -861,7 +861,7 @@ export default function StudentsPage({
                         <>
                           <button
                             onClick={() => handleEditGrades(student)}
-                            className="rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 hover:bg-slate-100"
                             title="Sửa điểm"
                           >
                             <Edit className="h-4 w-4" />
