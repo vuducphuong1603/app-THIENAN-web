@@ -2,8 +2,8 @@
 
 import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -107,6 +107,30 @@ function calculateAttendanceAverage(
   const totalPresent = (hk1Present ?? 0) + (hk2Present ?? 0);
   if (totalSessions === 0) return null;
   return Number(((totalPresent / totalSessions) * 10).toFixed(2));
+}
+
+function calculateCatechismAvg(
+  s1_45min?: number | null,
+  s1_exam?: number | null,
+  s2_45min?: number | null,
+  s2_exam?: number | null,
+) {
+  if (s1_45min == null && s1_exam == null && s2_45min == null && s2_exam == null) {
+    return null;
+  }
+  const sum = (s1_45min ?? 0) + (s2_45min ?? 0) + (s1_exam ?? 0) * 2 + (s2_exam ?? 0) * 2;
+  return Number((sum / 6).toFixed(2));
+}
+
+function parseGradeInput(value: string) {
+  if (!value || value.trim() === "") {
+    return null;
+  }
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  return parsed;
 }
 
 export default function StudentsPage({
@@ -296,24 +320,93 @@ export default function StudentsPage({
     },
   });
 
+  type StudentInfoMutationPayload = {
+    student_code: string | null;
+    class_id: string | null;
+    saint_name: string | null;
+    full_name: string;
+    date_of_birth: string | null;
+    phone: string | null;
+    parent_phone_1: string | null;
+    parent_phone_2: string | null;
+    address: string | null;
+    notes: string | null;
+    academic_hk1_fortyfive: number | null;
+    academic_hk1_exam: number | null;
+    academic_hk2_fortyfive: number | null;
+    academic_hk2_exam: number | null;
+  };
+
+  const studentInfoMutation = useMutation<
+    StudentRow,
+    Error,
+    { mode: "create" | "update"; id?: string; payload: StudentInfoMutationPayload }
+  >({
+    mutationFn: async ({ mode, id, payload }) => {
+      if (mode === "create") {
+        const { data, error } = await supabase
+          .from("students")
+          .insert([{ ...payload }])
+          .select("*")
+          .single();
+
+        if (error) {
+          throw new Error(error.message ?? "Không thể tạo thiếu nhi mới trên Supabase.");
+        }
+
+        if (!data) {
+          throw new Error("Supabase không trả về dữ liệu thiếu nhi sau khi tạo.");
+        }
+
+        return data as StudentRow;
+      }
+
+      if (!id) {
+        throw new Error("Thiếu mã thiếu nhi để cập nhật.");
+      }
+
+      const { data, error } = await supabase
+        .from("students")
+        .update({ ...payload })
+        .eq("id", id)
+        .select("*")
+        .single();
+
+      if (error) {
+        throw new Error(error.message ?? "Không thể cập nhật thiếu nhi trên Supabase.");
+      }
+
+      if (!data) {
+        throw new Error("Supabase không trả về dữ liệu thiếu nhi sau khi cập nhật.");
+      }
+
+      return data as StudentRow;
+    },
+  });
+
   const isLoadingData = isLoadingSectors || isLoadingClasses || isLoadingStudents;
   const queryError =
     (sectorsError as Error | null) || (classesError as Error | null) || (studentsError as Error | null);
+  const queryClient = useQueryClient();
+  const nameCollator = useMemo(() => new Intl.Collator("vi", { sensitivity: "base" }), []);
+  const [studentSaveError, setStudentSaveError] = useState<string | null>(null);
+  const [isSavingStudent, setIsSavingStudent] = useState(false);
+  const isSavingInfo = isSavingStudent || studentInfoMutation.isPending;
 
-  useEffect(() => {
-    if (!studentRows.length) {
-      setStudents((previous) => {
-        if (!previous.length) {
-          return previous;
-        }
-        return [];
-      });
-      return;
+  const calculateAge = (dob: string) => {
+    if (!dob) return "-";
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
     }
+    return age;
+  };
 
-    const collator = new Intl.Collator("vi", { sensitivity: "base" });
-
-    const transformed: StudentWithGrades[] = studentRows.map((student) => {
+  const convertStudentRow = useCallback(
+    (student: StudentRow): StudentWithGrades => {
       const sanitizedClassId = sanitizeClassId(student.class_id);
       const classInfo = sanitizedClassId ? classMap.get(normalizeClassId(sanitizedClassId)) : undefined;
 
@@ -322,7 +415,7 @@ export default function StudentsPage({
       const semester245 = toNumberOrNull(student.academic_hk2_fortyfive);
       const semester2Exam = toNumberOrNull(student.academic_hk2_exam);
 
-      const catechismAvg = calculateCatechismAvg(semester145, semester1Exam, semester245, semester2Exam);
+      const catechismAverage = calculateCatechismAvg(semester145, semester1Exam, semester245, semester2Exam);
 
       const hk1Present =
         toNumberOrNull(student.attendance_hk1_present) ??
@@ -337,24 +430,13 @@ export default function StudentsPage({
         toNumberOrNull(student.attendance_hk2_total) ??
         toNumberOrNull(student.attendance_sunday_total);
 
-      const attendanceThursdayScore = calculateAttendanceScore(
-        hk1Present,
-        hk1Total,
-      );
-      const attendanceSundayScore = calculateAttendanceScore(
-        hk2Present,
-        hk2Total,
-      );
-      const attendanceAvg = calculateAttendanceAverage(
-        hk1Present,
-        hk1Total,
-        hk2Present,
-        hk2Total,
-      );
+      const attendanceThursdayScore = calculateAttendanceScore(hk1Present, hk1Total);
+      const attendanceSundayScore = calculateAttendanceScore(hk2Present, hk2Total);
+      const attendanceAvg = calculateAttendanceAverage(hk1Present, hk1Total, hk2Present, hk2Total);
 
       const totalAvg =
-        catechismAvg !== null || attendanceAvg !== null
-          ? Number(((catechismAvg ?? 0) * 0.6 + (attendanceAvg ?? 0) * 0.4).toFixed(2))
+        catechismAverage !== null || attendanceAvg !== null
+          ? Number(((catechismAverage ?? 0) * 0.6 + (attendanceAvg ?? 0) * 0.4).toFixed(2))
           : null;
 
       const studentCode = student.student_code ?? student.code ?? "";
@@ -364,6 +446,12 @@ export default function StudentsPage({
       const parentPhone2 = student.parent_phone2 ?? student.parent_phone_2 ?? "";
       const address = student.address ?? "";
       const notes = student.notes ?? null;
+      const phone = student.phone ?? "";
+      const dateOfBirth = student.date_of_birth ?? "";
+
+      const status = (student as { status?: StudentStatus | null }).status ?? "ACTIVE";
+      const createdAt = (student as { created_at?: string | null }).created_at ?? "";
+      const updatedAt = (student as { updated_at?: string | null }).updated_at ?? "";
 
       return {
         id: student.id,
@@ -371,15 +459,15 @@ export default function StudentsPage({
         class_id: sanitizedClassId,
         saint_name: saintName,
         full_name: fullName,
-        date_of_birth: student.date_of_birth ?? "",
-        phone: student.phone ?? "",
+        date_of_birth: dateOfBirth,
+        phone,
         parent_phone_1: parentPhone1,
         parent_phone_2: parentPhone2,
         address,
         notes,
-        status: "ACTIVE",
-        created_at: "",
-        updated_at: "",
+        status,
+        created_at: createdAt,
+        updated_at: updatedAt,
         class_name: classInfo?.name ?? "Chưa phân lớp",
         sector: classInfo?.sector ?? "CHIÊN",
         grades: {
@@ -387,7 +475,7 @@ export default function StudentsPage({
           semester_1_exam: semester1Exam,
           semester_2_45min: semester245,
           semester_2_exam: semester2Exam,
-          catechism_avg: catechismAvg,
+          catechism_avg: catechismAverage,
           attendance_avg: attendanceAvg,
           total_avg: totalAvg,
         },
@@ -399,18 +487,33 @@ export default function StudentsPage({
           attendance_score: attendanceAvg,
         },
       };
-    });
+    },
+    [classMap],
+  );
 
-    transformed.sort((a, b) => {
-      const nameComparison = collator.compare(a.full_name, b.full_name);
-      if (nameComparison !== 0) {
-        return nameComparison;
-      }
-      return a.student_code.localeCompare(b.student_code);
-    });
+  useEffect(() => {
+    if (!studentRows.length) {
+      setStudents((previous) => {
+        if (!previous.length) {
+          return previous;
+        }
+        return [];
+      });
+      return;
+    }
+
+    const transformed = studentRows
+      .map(convertStudentRow)
+      .sort((a, b) => {
+        const nameComparison = nameCollator.compare(a.full_name, b.full_name);
+        if (nameComparison !== 0) {
+          return nameComparison;
+        }
+        return a.student_code.localeCompare(b.student_code);
+      });
 
     setStudents(transformed);
-  }, [studentRows, classMap]);
+  }, [studentRows, convertStudentRow, nameCollator]);
 
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
@@ -422,32 +525,130 @@ export default function StudentsPage({
     return matchesSearch && matchesClass && matchesStatus;
   });
 
-  const calculateAge = (dob: string) => {
-    if (!dob) return "-";
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
-    }
-    return age;
+  const buildStudentMutationPayload = (): StudentInfoMutationPayload => {
+    const trimmedStudentCode = formData.student_code.trim();
+    const trimmedSaintName = formData.saint_name.trim();
+    const trimmedFullName = formData.full_name.trim();
+    const trimmedPhone = formData.phone.trim();
+    const trimmedParentPhone1 = formData.parent_phone_1.trim();
+    const trimmedParentPhone2 = formData.parent_phone_2.trim();
+    const trimmedAddress = formData.address.trim();
+    const trimmedNotes = formData.notes.trim();
+
+    return {
+      student_code: trimmedStudentCode.length > 0 ? trimmedStudentCode : null,
+      class_id: sanitizeClassId(formData.class_id) || null,
+      saint_name: trimmedSaintName.length > 0 ? trimmedSaintName : null,
+      full_name: trimmedFullName,
+      date_of_birth: formData.date_of_birth || null,
+      phone: trimmedPhone.length > 0 ? trimmedPhone : null,
+      parent_phone_1: trimmedParentPhone1.length > 0 ? trimmedParentPhone1 : null,
+      parent_phone_2: trimmedParentPhone2.length > 0 ? trimmedParentPhone2 : null,
+      address: trimmedAddress.length > 0 ? trimmedAddress : null,
+      notes: trimmedNotes.length > 0 ? trimmedNotes : null,
+      academic_hk1_fortyfive: parseGradeInput(formData.semester_1_45min),
+      academic_hk1_exam: parseGradeInput(formData.semester_1_exam),
+      academic_hk2_fortyfive: parseGradeInput(formData.semester_2_45min),
+      academic_hk2_exam: parseGradeInput(formData.semester_2_exam),
+    };
   };
 
-  const calculateCatechismAvg = (
-    s1_45min?: number | null,
-    s1_exam?: number | null,
-    s2_45min?: number | null,
-    s2_exam?: number | null,
-  ): number | null => {
-    if (s1_45min == null && s1_exam == null && s2_45min == null && s2_exam == null) {
-      return null;
+  const handleSubmitStudentForm = async () => {
+    if (isSavingInfo) {
+      return;
     }
-    const sum = (s1_45min || 0) + (s2_45min || 0) + (s1_exam || 0) * 2 + (s2_exam || 0) * 2;
-    return Number((sum / 6).toFixed(2));
+
+    const trimmedFullName = formData.full_name.trim();
+    if (!trimmedFullName) {
+      setStudentSaveError("Vui lòng nhập họ và tên thiếu nhi.");
+      return;
+    }
+
+    const payload = buildStudentMutationPayload();
+
+    const invalidGrade = [
+      payload.academic_hk1_fortyfive,
+      payload.academic_hk1_exam,
+      payload.academic_hk2_fortyfive,
+      payload.academic_hk2_exam,
+    ].find((value) => value !== null && (value < 0 || value > 10));
+
+    if (invalidGrade !== undefined) {
+      setStudentSaveError("Điểm phải nằm trong khoảng từ 0 đến 10.");
+      return;
+    }
+
+    const mode: "create" | "update" = showCreateModal ? "create" : "update";
+
+    if (mode === "update" && !selectedStudent) {
+      setStudentSaveError("Không tìm thấy thiếu nhi để cập nhật.");
+      return;
+    }
+
+    setStudentSaveError(null);
+    setIsSavingStudent(true);
+
+    try {
+      const supabaseRow = await studentInfoMutation.mutateAsync({
+        mode,
+        id: mode === "update" ? selectedStudent?.id : undefined,
+        payload,
+      });
+
+      const updatedStudent = convertStudentRow(supabaseRow);
+
+      setStudents((current) => {
+        if (mode === "create") {
+          const next = [...current, updatedStudent];
+          next.sort((a, b) => {
+            const nameComparison = nameCollator.compare(a.full_name, b.full_name);
+            if (nameComparison !== 0) {
+              return nameComparison;
+            }
+            return a.student_code.localeCompare(b.student_code);
+          });
+          return next;
+        }
+
+        return current.map((student) => (student.id === updatedStudent.id ? updatedStudent : student));
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["students", "list"] });
+
+      setShowCreateModal(false);
+      setShowEditModal(false);
+      setSelectedStudent(null);
+      setFormData({
+        student_code: "",
+        class_id: "",
+        saint_name: "",
+        full_name: "",
+        date_of_birth: "",
+        phone: "",
+        parent_phone_1: "",
+        parent_phone_2: "",
+        address: "",
+        notes: "",
+        semester_1_45min: "",
+        semester_1_exam: "",
+        semester_2_45min: "",
+        semester_2_exam: "",
+      });
+    } catch (error) {
+      console.error("Failed to save student information:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Không thể lưu thông tin thiếu nhi lên Supabase. Vui lòng thử lại.";
+      setStudentSaveError(message);
+    } finally {
+      setIsSavingStudent(false);
+    }
   };
 
   const handleCreate = () => {
+    setStudentSaveError(null);
+    setSelectedStudent(null);
     setFormData({
       student_code: "",
       class_id: "",
@@ -468,6 +669,7 @@ export default function StudentsPage({
   };
 
   const handleEditInfo = (student: StudentWithGrades) => {
+    setStudentSaveError(null);
     setSelectedStudent(student);
     setFormData({
       student_code: student.student_code,
@@ -504,22 +706,11 @@ export default function StudentsPage({
       return;
     }
 
-    const parseGradeValue = (value: string): number | null => {
-      if (!value || value.trim() === "") {
-        return null;
-      }
-      const parsed = Number(value);
-      if (!Number.isFinite(parsed)) {
-        return null;
-      }
-      return parsed;
-    };
-
     const nextGrades = {
-      semester_1_45min: parseGradeValue(gradeEdits.semester_1_45min),
-      semester_1_exam: parseGradeValue(gradeEdits.semester_1_exam),
-      semester_2_45min: parseGradeValue(gradeEdits.semester_2_45min),
-      semester_2_exam: parseGradeValue(gradeEdits.semester_2_exam),
+      semester_1_45min: parseGradeInput(gradeEdits.semester_1_45min),
+      semester_1_exam: parseGradeInput(gradeEdits.semester_1_exam),
+      semester_2_45min: parseGradeInput(gradeEdits.semester_2_45min),
+      semester_2_exam: parseGradeInput(gradeEdits.semester_2_exam),
     };
 
     const invalidEntry = Object.values(nextGrades).find(
@@ -627,6 +818,13 @@ export default function StudentsPage({
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4" />
           Không thể tải dữ liệu thiếu nhi: {queryError.message}
+        </div>
+      )}
+
+      {studentSaveError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <AlertTriangle className="h-4 w-4" />
+          {studentSaveError}
         </div>
       )}
 
@@ -1045,17 +1243,23 @@ export default function StudentsPage({
             onClick={() => {
               setShowCreateModal(false);
               setShowEditModal(false);
+              setStudentSaveError(null);
+              setSelectedStudent(null);
             }}
           >
             Hủy
           </Button>
-          <Button
-            onClick={() => {
-              setShowCreateModal(false);
-              setShowEditModal(false);
-            }}
-          >
-            {showCreateModal ? "Thêm" : "Cập nhật"}
+          <Button onClick={handleSubmitStudentForm} disabled={isSavingInfo}>
+            {isSavingInfo ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Đang lưu...
+              </span>
+            ) : showCreateModal ? (
+              "Thêm"
+            ) : (
+              "Cập nhật"
+            )}
           </Button>
         </div>
       </Modal>
