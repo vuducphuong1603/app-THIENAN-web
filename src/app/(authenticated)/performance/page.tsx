@@ -1,129 +1,420 @@
-"use client";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { ClassRow, SectorRow } from "@/lib/queries/supabase";
+import PerformanceContent from "./performance-content";
+import { MAX_CHART_POINTS, SECTOR_KEYS, SECTOR_METADATA, WEEKDAY_METADATA } from "./constants";
+import type {
+  ChartDataPoint,
+  ClassBreakdown,
+  ClassBreakdownEntry,
+  NormalizedWeekday,
+  PerformancePageData,
+  SectorKey,
+} from "./types";
 
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-
-const sundayData = [
-  { week: "12/01", chien: 70, au: 68, thieu: 74, nghia: 65 },
-  { week: "19/01", chien: 72, au: 71, thieu: 76, nghia: 66 },
-  { week: "26/01", chien: 74, au: 73, thieu: 78, nghia: 68 },
-];
-
-const thursdayData = [
-  { week: "15/01", chien: 52, au: 49, thieu: 54, nghia: 48 },
-  { week: "22/01", chien: 54, au: 51, thieu: 57, nghia: 50 },
-  { week: "29/01", chien: 56, au: 52, thieu: 59, nghia: 51 },
-];
-
-const colors = {
-  chien: "#ec4899",
-  au: "#22c55e",
-  thieu: "#3b82f6",
-  nghia: "#facc15",
+type AttendanceRecordRow = {
+  student_id: string;
+  event_date: string | null;
+  weekday: string | null;
+  status: string | null;
+  students?: {
+    class_id?: string | null;
+  } | null;
 };
 
-export default function PerformancePage() {
-  return (
-    <div className="space-y-8">
-      <header>
-        <h2 className="text-2xl font-semibold text-slate-900">Thống kê điểm danh</h2>
-        <p className="text-sm text-slate-500">Xu hướng 3 tuần gần nhất</p>
-      </header>
+type SupabaseServerClient = Awaited<ReturnType<typeof createSupabaseServerClient>>;
 
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-800">Chủ nhật</h3>
-        <div className="h-80 w-full">
-          <ResponsiveContainer>
-            <BarChart data={sundayData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="week" stroke="#475569" />
-              <YAxis stroke="#475569" allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="chien" name="Ngành Chiên" fill={colors.chien} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="au" name="Ngành Ấu" fill={colors.au} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="thieu" name="Ngành Thiếu" fill={colors.thieu} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="nghia" name="Ngành Nghĩa" fill={colors.nghia} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {sundayData.map((item) => (
-            <div key={item.week} className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-              <p className="font-semibold text-slate-700">Tuần: {item.week}</p>
-              <p className="text-slate-600">
-                Tổng thiếu nhi: {item.chien + item.au + item.thieu + item.nghia}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
+type SectorTotals = { [K in SectorKey]: number };
 
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-800">Thứ 5</h3>
-        <div className="h-80 w-full">
-          <ResponsiveContainer>
-            <BarChart data={thursdayData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="week" stroke="#475569" />
-              <YAxis stroke="#475569" allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="chien" name="Ngành Chiên" fill={colors.chien} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="au" name="Ngành Ấu" fill={colors.au} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="thieu" name="Ngành Thiếu" fill={colors.thieu} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="nghia" name="Ngành Nghĩa" fill={colors.nghia} radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+type ClassInfo = {
+  id: string;
+  name: string;
+  sectorKey: SectorKey;
+};
 
-      <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h3 className="text-lg font-semibold text-slate-800">Thống kê theo lớp trong ngành</h3>
-          <div className="flex flex-wrap gap-2 text-sm text-slate-600">
-            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
-              <option>Ngành Chiên</option>
-              <option>Ngành Ấu</option>
-              <option>Ngành Thiếu</option>
-              <option>Ngành Nghĩa</option>
-            </select>
-            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
-              <option>Chủ nhật</option>
-              <option>Thứ 5</option>
-            </select>
-            <select className="rounded-md border border-slate-300 px-3 py-2 text-slate-900 shadow-sm">
-              <option>19/01/2026</option>
-              <option>26/01/2026</option>
-              <option>02/02/2026</option>
-            </select>
-          </div>
-        </div>
-        <p className="text-sm text-slate-500">Tuần: 13/01 - 19/01/2026</p>
-        <div className="h-80 w-full">
-          <ResponsiveContainer>
-            <BarChart data={[
-              { class: "Chiên 1", total: 28 },
-              { class: "Chiên 2", total: 26 },
-              { class: "Chiên 3", total: 25 },
-            ]}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="class" stroke="#475569" />
-              <YAxis stroke="#475569" allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="total" name="Thiếu nhi điểm danh" fill="#059669" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-    </div>
-  );
+const ATTENDANCE_LOOKBACK_DAYS = 120;
+const SUPABASE_ATTENDANCE_PAGE_SIZE = 1000;
+
+const weekLabelFormatter = new Intl.DateTimeFormat("vi-VN", {
+  day: "2-digit",
+  month: "2-digit",
+  timeZone: "UTC",
+});
+
+const fullDateFormatter = new Intl.DateTimeFormat("vi-VN", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+export default async function PerformancePage() {
+  const supabase = await createSupabaseServerClient();
+
+  const [classesResult, sectorsResult] = await Promise.all([
+    supabase.from("classes").select("id, name, sector_id, sector, sector_code, sector_name, branch, branch_name"),
+    supabase.from("sectors").select("id, name, code"),
+  ]);
+
+  const sectorRows = sectorsResult.error
+    ? []
+    : ((sectorsResult.data as SectorRow[] | null | undefined) ?? []);
+  if (sectorsResult.error) {
+    console.warn("Performance page sectors query fallback:", sectorsResult.error.message ?? sectorsResult.error);
+  }
+
+  const classRows = classesResult.error
+    ? []
+    : ((classesResult.data as ClassRow[] | null | undefined) ?? []);
+  if (classesResult.error) {
+    console.warn("Performance page classes query fallback:", classesResult.error.message ?? classesResult.error);
+  }
+
+  const sectorKeyById = buildSectorKeyById(sectorRows);
+  const classInfoById = buildClassInfoById(classRows, sectorKeyById);
+
+  const attendanceFromDateIso = computeFromDateIso(ATTENDANCE_LOOKBACK_DAYS);
+  const attendanceRecords = await fetchAttendanceRecords(supabase, attendanceFromDateIso);
+
+  const performanceData = aggregateAttendance(attendanceRecords, classInfoById);
+
+  const pageData: PerformancePageData = {
+    charts: {
+      sunday: performanceData.sundayChart,
+      thursday: performanceData.thursdayChart,
+    },
+    classBreakdowns: performanceData.classBreakdowns,
+  };
+
+  return <PerformanceContent data={pageData} />;
+}
+
+function computeFromDateIso(daysBack: number) {
+  const today = new Date();
+  today.setUTCDate(today.getUTCDate() - daysBack);
+  today.setUTCHours(0, 0, 0, 0);
+  return today.toISOString().slice(0, 10);
+}
+
+function buildSectorKeyById(sectors: SectorRow[]) {
+  const map = new Map<number, SectorKey>();
+  sectors.forEach((sector) => {
+    if (typeof sector.id !== "number") {
+      return;
+    }
+    const sectorKey = detectSectorKey(sector.code, sector.name);
+    if (sectorKey) {
+      map.set(sector.id, sectorKey);
+    }
+  });
+  return map;
+}
+
+function buildClassInfoById(classRows: ClassRow[], sectorKeyById: Map<number, SectorKey>) {
+  const infos = new Map<string, ClassInfo>();
+
+  classRows.forEach((cls) => {
+    const classId = sanitizeClassId(cls.id);
+    const normalizedId = normalizeClassId(classId);
+    if (!classId || !normalizedId) {
+      return;
+    }
+
+    const sectorKeyFromId =
+      typeof cls.sector_id === "number" ? sectorKeyById.get(cls.sector_id) ?? null : null;
+
+    const sectorKey =
+      sectorKeyFromId ??
+      detectSectorKey(
+        cls.sector_code,
+        cls.sector_name,
+        cls.sector,
+        cls.branch,
+        cls.branch_name,
+        cls.name,
+      );
+
+    if (!sectorKey) {
+      return;
+    }
+
+    const displayName = (cls.name ?? "").trim() || classId;
+
+    infos.set(normalizedId, {
+      id: classId,
+      name: displayName,
+      sectorKey,
+    });
+  });
+
+  return infos;
+}
+
+function detectSectorKey(...candidates: Array<string | null | undefined>): SectorKey | null {
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalized = normalizeText(candidate);
+    if (!normalized) continue;
+    if (normalized.includes("CHIEN")) {
+      return "chien";
+    }
+    if (normalized.includes("NGHIA")) {
+      return "nghia";
+    }
+    if (normalized.includes("THIEU")) {
+      return "thieu";
+    }
+    if (normalized.includes("AU")) {
+      return "au";
+    }
+  }
+
+  return null;
+}
+
+function normalizeWeekday(value?: string | null): NormalizedWeekday | null {
+  if (!value) return null;
+  const normalized = normalizeText(value);
+  if (!normalized) return null;
+  if (normalized.includes("SUNDAY") || normalized.includes("CHUNHAT") || normalized === "CN" || normalized === "SUN") {
+    return "sunday";
+  }
+  if (
+    normalized.includes("THURSDAY") ||
+    normalized.includes("THUNAM") ||
+    normalized.includes("THU5") ||
+    normalized === "T5"
+  ) {
+    return "thursday";
+  }
+  return null;
+}
+
+function isPresentStatus(status?: string | null) {
+  if (!status) {
+    return false;
+  }
+  const normalized = normalizeText(status);
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized === "PRESENT" ||
+    normalized === "YES" ||
+    normalized === "TRUE" ||
+    normalized === "1" ||
+    normalized === "ATTENDED" ||
+    normalized === "ATTEND" ||
+    normalized === "CO" ||
+    normalized === "X"
+  ) {
+    return true;
+  }
+  if (
+    normalized === "ABSENT" ||
+    normalized === "NO" ||
+    normalized === "FALSE" ||
+    normalized === "0" ||
+    normalized === "VANG" ||
+    normalized === "NGHI"
+  ) {
+    return false;
+  }
+  return normalized === "P"; // fallback for shorthand
+}
+
+function normalizeText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toUpperCase();
+}
+
+function sanitizeClassId(value?: string | null) {
+  const trimmed = (value ?? "").trim();
+  return trimmed || null;
+}
+
+function normalizeClassId(value?: string | null) {
+  const sanitized = sanitizeClassId(value);
+  return sanitized ? sanitized.toLowerCase() : null;
+}
+
+function formatWeekLabel(eventDate: string) {
+  try {
+    return weekLabelFormatter.format(new Date(`${eventDate}T00:00:00Z`));
+  } catch {
+    return eventDate;
+  }
+}
+
+function formatFullDateLabel(eventDate: string) {
+  try {
+    return fullDateFormatter.format(new Date(`${eventDate}T00:00:00Z`));
+  } catch {
+    return eventDate;
+  }
+}
+
+function createEmptySectorTotals(): SectorTotals {
+  return {
+    chien: 0,
+    au: 0,
+    thieu: 0,
+    nghia: 0,
+  };
+}
+
+function aggregateAttendance(records: AttendanceRecordRow[], classInfoById: Map<string, ClassInfo>) {
+  const chartTotals: Record<NormalizedWeekday, Map<string, SectorTotals>> = {
+    sunday: new Map(),
+    thursday: new Map(),
+  };
+
+  const classTotals = new Map<string, Map<string, ClassBreakdownEntry>>();
+
+  records.forEach((record) => {
+    if (!record?.event_date) {
+      return;
+    }
+    const normalizedWeekday = normalizeWeekday(record.weekday);
+    if (!normalizedWeekday) {
+      return;
+    }
+    const classId = normalizeClassId(record.students?.class_id);
+    if (!classId) {
+      return;
+    }
+
+    const classInfo = classInfoById.get(classId);
+    if (!classInfo) {
+      return;
+    }
+
+    if (!isPresentStatus(record.status)) {
+      return;
+    }
+
+    const weekdayTotals = chartTotals[normalizedWeekday];
+    let totals = weekdayTotals.get(record.event_date);
+    if (!totals) {
+      totals = createEmptySectorTotals();
+      weekdayTotals.set(record.event_date, totals);
+    }
+    totals[classInfo.sectorKey] += 1;
+
+    const breakdownKey = `${normalizedWeekday}|${record.event_date}|${classInfo.sectorKey}`;
+    let classMap = classTotals.get(breakdownKey);
+    if (!classMap) {
+      classMap = new Map<string, ClassBreakdownEntry>();
+      classTotals.set(breakdownKey, classMap);
+    }
+
+    let entry = classMap.get(classInfo.id);
+    if (!entry) {
+      entry = { classId: classInfo.id, className: classInfo.name, present: 0 };
+      classMap.set(classInfo.id, entry);
+    }
+    entry.present += 1;
+  });
+
+  const sundayChart = convertChartMapToArray(chartTotals.sunday);
+  const thursdayChart = convertChartMapToArray(chartTotals.thursday);
+  const classBreakdowns = convertClassBreakdowns(classTotals);
+
+  return { sundayChart, thursdayChart, classBreakdowns };
+}
+
+function convertChartMapToArray(source: Map<string, SectorTotals>): ChartDataPoint[] {
+  const sortedDates = Array.from(source.keys()).sort();
+  const recentDates = sortedDates.slice(-MAX_CHART_POINTS);
+  return recentDates.map((eventDate) => {
+    const totals = source.get(eventDate) ?? createEmptySectorTotals();
+    const chartTotals = SECTOR_KEYS.reduce((acc, key) => acc + (totals[key] ?? 0), 0);
+    return {
+      eventDate,
+      week: formatWeekLabel(eventDate),
+      chien: totals.chien ?? 0,
+      au: totals.au ?? 0,
+      thieu: totals.thieu ?? 0,
+      nghia: totals.nghia ?? 0,
+      total: chartTotals,
+    };
+  });
+}
+
+function convertClassBreakdowns(
+  source: Map<string, Map<string, ClassBreakdownEntry>>,
+): ClassBreakdown[] {
+  const breakdowns: ClassBreakdown[] = [];
+
+  source.forEach((classMap, key) => {
+    const [weekdayKey, eventDate, sectorKey] = key.split("|") as [
+      NormalizedWeekday,
+      string,
+      SectorKey,
+    ];
+
+    const classes = Array.from(classMap.values()).sort((a, b) => {
+      if (b.present !== a.present) {
+        return b.present - a.present;
+      }
+      return a.className.localeCompare(b.className, "vi");
+    });
+
+    breakdowns.push({
+      sectorKey,
+      weekday: weekdayKey,
+      eventDate,
+      label: formatFullDateLabel(eventDate),
+      classes,
+    });
+  });
+
+  breakdowns.sort((a, b) => {
+    if (a.eventDate !== b.eventDate) {
+      return a.eventDate > b.eventDate ? -1 : 1;
+    }
+    if (a.weekday !== b.weekday) {
+      return WEEKDAY_METADATA[a.weekday].order - WEEKDAY_METADATA[b.weekday].order;
+    }
+    return SECTOR_METADATA[a.sectorKey].order - SECTOR_METADATA[b.sectorKey].order;
+  });
+
+  return breakdowns;
+}
+
+async function fetchAttendanceRecords(
+  client: SupabaseServerClient,
+  fromDateIso: string,
+): Promise<AttendanceRecordRow[]> {
+  const rows: AttendanceRecordRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_ATTENDANCE_PAGE_SIZE - 1;
+    const { data, error } = await client
+      .from("attendance_records")
+      .select("student_id, event_date, weekday, status, students(class_id)")
+      .gte("event_date", fromDateIso)
+      .order("event_date", { ascending: true })
+      .order("student_id", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      console.warn("Performance page attendance query fallback:", error.message ?? error);
+      break;
+    }
+
+    const batch = (data as AttendanceRecordRow[] | null) ?? [];
+    rows.push(...batch);
+
+    if (batch.length < SUPABASE_ATTENDANCE_PAGE_SIZE) {
+      break;
+    }
+
+    from += SUPABASE_ATTENDANCE_PAGE_SIZE;
+  }
+
+  return rows;
 }
