@@ -116,17 +116,60 @@ export async function fetchTeachers(supabase: SupabaseClient): Promise<TeacherRo
 }
 
 export async function fetchStudentClassPairs(supabase: SupabaseClient): Promise<StudentClassRow[]> {
-  const { data, error } = await supabase.from("students").select("id, class_id");
+  const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
+  const allRows: StudentClassRow[] = [];
 
-  if (error) {
-    if (isIgnorableSupabaseError(error)) {
-      console.warn("Supabase students class count query fallback:", error.message);
+  const { data: firstBatchData, error: firstError, count } = await supabase
+    .from("students")
+    .select("id, class_id", { count: "exact" })
+    .range(0, pageSize - 1);
+
+  if (firstError) {
+    if (isIgnorableSupabaseError(firstError)) {
+      console.warn("Supabase students class count query fallback:", firstError.message);
       return [];
     }
-    throw new Error(error.message);
+    throw new Error(firstError.message);
   }
 
-  return (data as StudentClassRow[] | null) ?? [];
+  const firstBatch = (firstBatchData as StudentClassRow[] | null) ?? [];
+  allRows.push(...firstBatch);
+
+  const totalRows = count ?? firstBatch.length;
+
+  if (totalRows <= firstBatch.length) {
+    return allRows;
+  }
+
+  let from = firstBatch.length;
+
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase.from("students").select("id, class_id").range(from, to);
+
+    if (error) {
+      if (isIgnorableSupabaseError(error)) {
+        console.warn("Supabase students class count paging fallback:", error.message);
+        break;
+      }
+      throw new Error(error.message);
+    }
+
+    const batch = (data as StudentClassRow[] | null) ?? [];
+    allRows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+
+    from += pageSize;
+
+    if (count !== null && from >= totalRows) {
+      break;
+    }
+  }
+
+  return allRows;
 }
 
 export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRow[]> {
