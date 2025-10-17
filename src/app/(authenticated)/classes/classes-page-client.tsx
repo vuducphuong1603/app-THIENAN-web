@@ -454,11 +454,28 @@ export default function ClassesPage({
       }
 
       if (sector) {
-        classUpdates.sector = sector;
+        const normalizedTarget = normalizeText(sector);
+        const matchedSectorRow = sectorRows.find((sectorRow) => {
+          const normalizedCode = sectorRow.code ? normalizeText(sectorRow.code) : null;
+          const normalizedName = sectorRow.name ? normalizeText(sectorRow.name) : null;
+
+          if (normalizedCode && normalizedCode === normalizedTarget) {
+            return true;
+          }
+
+          if (normalizedName && normalizedName === normalizedTarget) {
+            return true;
+          }
+
+          return false;
+        });
+
+        if (matchedSectorRow) {
+          classUpdates.sector_id = matchedSectorRow.id;
+        }
       }
 
       if (Object.keys(classUpdates).length > 0) {
-        classUpdates.updated_at = new Date().toISOString();
         const { error: classError } = await supabase
           .from("classes")
           .update(classUpdates)
