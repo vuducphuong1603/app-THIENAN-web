@@ -391,8 +391,6 @@ export default async function DashboardPage() {
     }
   });
 
-  const classRosterCounts = new Map<string, number>();
-
   studentRows.forEach((student) => {
     if (!student) {
       return;
@@ -401,7 +399,6 @@ export default async function DashboardPage() {
     if (!classId) {
       return;
     }
-    classRosterCounts.set(classId, (classRosterCounts.get(classId) ?? 0) + 1);
     const sectorKey = classIdToSectorKey.get(normalizeClassId(classId));
     if (!sectorKey) {
       return;
@@ -482,7 +479,6 @@ export default async function DashboardPage() {
     weekday: string;
     eventDate: string;
     presentCount: number;
-    recordedCounts: Map<string, number>;
   };
 
   const attendanceByDate = new Map<string, AttendanceDailyAccumulator>();
@@ -499,7 +495,6 @@ export default async function DashboardPage() {
         weekday,
         eventDate: record.event_date,
         presentCount: 0,
-        recordedCounts: new Map<string, number>(),
       };
       attendanceByDate.set(key, accumulator);
     }
@@ -507,37 +502,20 @@ export default async function DashboardPage() {
     if ((record.status ?? "").toLowerCase() === "present") {
       accumulator.presentCount += 1;
     }
-
-    const classId = sanitizeClassId(record.student_class_id ?? record.students?.class_id);
-    if (classId) {
-      accumulator.recordedCounts.set(
-        classId,
-        (accumulator.recordedCounts.get(classId) ?? 0) + 1,
-      );
-    }
   });
 
   const attendanceSummaryByWeekday = new Map<
     string,
-    { weekday: string; eventDate: string; present: number; pending: number }
+    { weekday: string; eventDate: string; present: number }
   >();
 
   attendanceByDate.forEach((daily) => {
-    let pendingCount = 0;
-    daily.recordedCounts.forEach((recorded, classId) => {
-      const rosterSize = classRosterCounts.get(classId) ?? 0;
-      if (rosterSize > recorded) {
-        pendingCount += rosterSize - recorded;
-      }
-    });
-
     const existing = attendanceSummaryByWeekday.get(daily.weekday);
     if (!existing || daily.eventDate > existing.eventDate) {
       attendanceSummaryByWeekday.set(daily.weekday, {
         weekday: daily.weekday,
         eventDate: daily.eventDate,
         present: daily.presentCount,
-        pending: pendingCount,
       });
     }
   });
@@ -611,6 +589,8 @@ export default async function DashboardPage() {
     ),
   };
 
+  const totalStudentsCount = Math.max(resolvedSummary.students, 0);
+
   const fallbackSectors: SectorMetricsWithOrder[] = DEFAULT_SECTOR_IDENTIFIERS.map((identifier) => ({
     key: identifier.key,
     order: identifier.order,
@@ -641,10 +621,11 @@ export default async function DashboardPage() {
 
   const orderedAttendance = DEFAULT_ATTENDANCE_SESSIONS.map((session) => {
     const summary = attendanceSummaryByWeekday.get(session);
+    const presentCount = summary?.present ?? 0;
     return {
       session: summary?.weekday ?? session,
-      present: summary?.present ?? 0,
-      pending: summary?.pending ?? 0,
+      present: presentCount,
+      pending: Math.max(totalStudentsCount - presentCount, 0),
     };
   });
 
@@ -661,7 +642,7 @@ export default async function DashboardPage() {
     .map((summary) => ({
       session: summary.weekday,
       present: summary.present,
-      pending: summary.pending,
+      pending: Math.max(totalStudentsCount - summary.present, 0),
     }));
 
   const attendance = [...orderedAttendance, ...additionalAttendance];
