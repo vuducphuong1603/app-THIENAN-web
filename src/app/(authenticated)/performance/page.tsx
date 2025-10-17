@@ -16,6 +16,11 @@ type AttendanceRecordRow = {
   event_date: string | null;
   weekday: string | null;
   status: string | null;
+  student_class_id?: string | null;
+  student_class_name?: string | null;
+  student_sector_id?: number | null;
+  student_sector_code?: string | null;
+  student_sector_name?: string | null;
   students?: {
     class_id?: string | null;
   } | null;
@@ -281,14 +286,32 @@ function aggregateAttendance(records: AttendanceRecordRow[], classInfoById: Map<
     if (!normalizedWeekday) {
       return;
     }
-    const classId = normalizeClassId(record.students?.class_id);
-    if (!classId) {
+    const rawClassId = sanitizeClassId(record.student_class_id ?? record.students?.class_id);
+    const normalizedClassId = normalizeClassId(rawClassId);
+    if (!normalizedClassId) {
       return;
     }
 
-    const classInfo = classInfoById.get(classId);
+    let classInfo = classInfoById.get(normalizedClassId);
     if (!classInfo) {
-      return;
+      const fallbackSectorKey = detectSectorKey(
+        record.student_sector_code,
+        record.student_sector_name,
+        record.student_class_name,
+      );
+      if (!fallbackSectorKey) {
+        return;
+      }
+      const fallbackClassName =
+        (record.student_class_name ?? "").trim() ||
+        rawClassId ||
+        normalizedClassId;
+      classInfo = {
+        id: rawClassId ?? normalizedClassId,
+        name: fallbackClassName,
+        sectorKey: fallbackSectorKey,
+      };
+      classInfoById.set(normalizedClassId, classInfo);
     }
 
     if (!isPresentStatus(record.status)) {
@@ -395,7 +418,9 @@ async function fetchAttendanceRecords(
     const to = from + SUPABASE_ATTENDANCE_PAGE_SIZE - 1;
     const { data, error } = await client
       .from("attendance_records")
-      .select("student_id, event_date, weekday, status, students(class_id)")
+      .select(
+        "student_id, event_date, weekday, status, student_class_id, student_class_name, student_sector_id, student_sector_code, student_sector_name, students(class_id)",
+      )
       .gte("event_date", fromDateIso)
       .order("event_date", { ascending: true })
       .order("student_id", { ascending: true })

@@ -60,6 +60,11 @@ type AttendanceRecordRow = {
   event_date: string | null;
   weekday: string | null;
   status: string | null;
+  student_class_id?: string | null;
+  student_class_name?: string | null;
+  student_sector_id?: number | null;
+  student_sector_code?: string | null;
+  student_sector_name?: string | null;
   students?: {
     class_id?: string | null;
   } | null;
@@ -270,7 +275,9 @@ async function fetchRecentAttendanceRecords(
     const to = from + pageSize - 1;
     const { data, error } = await client
       .from("attendance_records")
-      .select("student_id, event_date, weekday, status, students(class_id)")
+      .select(
+        "student_id, event_date, weekday, status, student_class_id, student_class_name, student_sector_id, student_sector_code, student_sector_name, students(class_id)",
+      )
       .gte("event_date", fromDateIso)
       .order("event_date", { ascending: false })
       .range(from, to);
@@ -501,7 +508,7 @@ export default async function DashboardPage() {
       accumulator.presentCount += 1;
     }
 
-    const classId = sanitizeClassId(record.students?.class_id);
+    const classId = sanitizeClassId(record.student_class_id ?? record.students?.class_id);
     if (classId) {
       accumulator.recordedCounts.set(
         classId,
