@@ -3,7 +3,7 @@
 import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -242,6 +242,59 @@ export default function StudentsPage({
     semester_2_45min: "",
     semester_2_exam: "",
   });
+  const [savingGradesId, setSavingGradesId] = useState<string | null>(null);
+  const [gradeSaveError, setGradeSaveError] = useState<string | null>(null);
+  type GradeMutationPayload = {
+    semester_1_45min: number | null;
+    semester_1_exam: number | null;
+    semester_2_45min: number | null;
+    semester_2_exam: number | null;
+  };
+
+  const gradeUpdateMutation = useMutation<
+    GradeMutationPayload,
+    Error,
+    {
+      studentId: string;
+      updates: GradeMutationPayload;
+    }
+  >({
+    mutationFn: async ({ studentId, updates }) => {
+      const response = await fetch(`/api/students/${studentId}/grades`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        let message = "Không thể lưu điểm lên Supabase. Vui lòng thử lại.";
+        try {
+          const errorBody = (await response.json()) as { error?: string };
+          if (errorBody?.error) {
+            message = errorBody.error;
+          }
+        } catch {
+          // Ignore JSON parse issues; fall back to default message.
+        }
+        throw new Error(message);
+      }
+
+      try {
+        const result = (await response.json()) as {
+          data?: { grades?: GradeMutationPayload };
+        };
+        if (result?.data?.grades) {
+          return result.data.grades;
+        }
+      } catch {
+        // If response body is empty or invalid, fall back to optimistic values.
+      }
+
+      return updates;
+    },
+  });
 
   const isLoadingData = isLoadingSectors || isLoadingClasses || isLoadingStudents;
   const queryError =
@@ -436,6 +489,7 @@ export default function StudentsPage({
   };
 
   const handleEditGrades = (student: StudentWithGrades) => {
+    setGradeSaveError(null);
     setEditingGradesId(student.id);
     setGradeEdits({
       semester_1_45min: student.grades.semester_1_45min?.toString() || "",
@@ -445,30 +499,99 @@ export default function StudentsPage({
     });
   };
 
-  const handleSaveGrades = (studentId: string) => {
-    setStudents(
-      students.map((s) =>
-        s.id === studentId
-          ? {
-              ...s,
-              grades: {
-                ...s.grades,
-                semester_1_45min: gradeEdits.semester_1_45min ? parseFloat(gradeEdits.semester_1_45min) : null,
-                semester_1_exam: gradeEdits.semester_1_exam ? parseFloat(gradeEdits.semester_1_exam) : null,
-                semester_2_45min: gradeEdits.semester_2_45min ? parseFloat(gradeEdits.semester_2_45min) : null,
-                semester_2_exam: gradeEdits.semester_2_exam ? parseFloat(gradeEdits.semester_2_exam) : null,
-                catechism_avg: calculateCatechismAvg(
-                  gradeEdits.semester_1_45min ? parseFloat(gradeEdits.semester_1_45min) : null,
-                  gradeEdits.semester_1_exam ? parseFloat(gradeEdits.semester_1_exam) : null,
-                  gradeEdits.semester_2_45min ? parseFloat(gradeEdits.semester_2_45min) : null,
-                  gradeEdits.semester_2_exam ? parseFloat(gradeEdits.semester_2_exam) : null,
-                ),
-              },
-            }
-          : s,
-      ),
+  const handleSaveGrades = async (studentId: string) => {
+    if (gradeUpdateMutation.isPending) {
+      return;
+    }
+
+    const parseGradeValue = (value: string): number | null => {
+      if (!value || value.trim() === "") {
+        return null;
+      }
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return null;
+      }
+      return parsed;
+    };
+
+    const nextGrades = {
+      semester_1_45min: parseGradeValue(gradeEdits.semester_1_45min),
+      semester_1_exam: parseGradeValue(gradeEdits.semester_1_exam),
+      semester_2_45min: parseGradeValue(gradeEdits.semester_2_45min),
+      semester_2_exam: parseGradeValue(gradeEdits.semester_2_exam),
+    };
+
+    const invalidEntry = Object.values(nextGrades).find(
+      (value) => value !== null && (value < 0 || value > 10),
     );
-    setEditingGradesId(null);
+
+    if (invalidEntry !== undefined) {
+      setGradeSaveError("Điểm phải nằm trong khoảng từ 0 đến 10.");
+      return;
+    }
+
+    setGradeSaveError(null);
+    setSavingGradesId(studentId);
+
+    try {
+      const persistedGrades = await gradeUpdateMutation.mutateAsync({
+        studentId,
+        updates: nextGrades,
+      });
+
+      setStudents((current) =>
+        current.map((student) => {
+          if (student.id !== studentId) {
+            return student;
+          }
+
+          const appliedGrades: GradeMutationPayload = {
+            semester_1_45min: persistedGrades.semester_1_45min,
+            semester_1_exam: persistedGrades.semester_1_exam,
+            semester_2_45min: persistedGrades.semester_2_45min,
+            semester_2_exam: persistedGrades.semester_2_exam,
+          };
+
+          const catechismAvg = calculateCatechismAvg(
+            appliedGrades.semester_1_45min,
+            appliedGrades.semester_1_exam,
+            appliedGrades.semester_2_45min,
+            appliedGrades.semester_2_exam,
+          );
+
+          const attendanceAvg = student.grades.attendance_avg;
+          const totalAvg =
+            catechismAvg !== null || attendanceAvg !== null
+              ? Number(((catechismAvg ?? 0) * 0.6 + (attendanceAvg ?? 0) * 0.4).toFixed(2))
+              : null;
+
+          return {
+            ...student,
+            grades: {
+              ...student.grades,
+              semester_1_45min: appliedGrades.semester_1_45min,
+              semester_1_exam: appliedGrades.semester_1_exam,
+              semester_2_45min: appliedGrades.semester_2_45min,
+              semester_2_exam: appliedGrades.semester_2_exam,
+              catechism_avg: catechismAvg,
+              total_avg: totalAvg,
+            },
+          };
+        }),
+      );
+
+      setEditingGradesId(null);
+    } catch (error) {
+      console.error("Failed to save student grades:", error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Không thể lưu điểm lên Supabase. Vui lòng thử lại.";
+      setGradeSaveError(message);
+    } finally {
+      setSavingGradesId(null);
+    }
   };
 
   const handleDelete = (studentId: string) => {
@@ -504,6 +627,13 @@ export default function StudentsPage({
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4" />
           Không thể tải dữ liệu thiếu nhi: {queryError.message}
+        </div>
+      )}
+
+      {gradeSaveError && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          <AlertTriangle className="h-4 w-4" />
+          {gradeSaveError}
         </div>
       )}
 
@@ -584,6 +714,7 @@ export default function StudentsPage({
           <tbody>
             {filteredStudents.map((student) => {
               const isEditingGrades = editingGradesId === student.id;
+              const isSavingGrades = savingGradesId === student.id;
               const age = calculateAge(student.date_of_birth);
               return (
                 <tr key={student.id} className="border-b border-slate-100 hover:bg-slate-50">
@@ -701,14 +832,26 @@ export default function StudentsPage({
                         <>
                           <button
                             onClick={() => handleSaveGrades(student.id)}
-                            className="rounded-md border border-emerald-600 bg-emerald-50 p-1 text-emerald-700 hover:bg-emerald-100"
+                            disabled={isSavingGrades}
+                            className={`rounded-md border border-emerald-600 bg-emerald-50 p-1 text-emerald-700 hover:bg-emerald-100 ${isSavingGrades ? "cursor-not-allowed opacity-60" : ""}`}
                             title="Lưu điểm"
                           >
-                            <Save className="h-4 w-4" />
+                            {isSavingGrades ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
                           </button>
                           <button
-                            onClick={() => setEditingGradesId(null)}
-                            className="rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100"
+                            onClick={() => {
+                              if (isSavingGrades) {
+                                return;
+                              }
+                              setGradeSaveError(null);
+                              setEditingGradesId(null);
+                            }}
+                            disabled={isSavingGrades}
+                            className={`rounded-md border border-slate-300 p-1 text-slate-600 hover:bg-slate-100 ${isSavingGrades ? "cursor-not-allowed opacity-60" : ""}`}
                             title="Hủy"
                           >
                             <X className="h-4 w-4" />
