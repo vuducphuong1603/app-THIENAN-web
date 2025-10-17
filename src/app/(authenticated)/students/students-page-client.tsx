@@ -320,20 +320,20 @@ export default function StudentsPage({
     },
   });
 
-  type StudentInfoMutationPayload = {
-    student_code: string | null;
-    class_id: string | null;
-    saint_name: string | null;
-    full_name: string;
-    date_of_birth: string | null;
-    phone: string | null;
-    parent_phone_1: string | null;
-    parent_phone_2: string | null;
-    address: string | null;
-    notes: string | null;
-    academic_hk1_fortyfive: number | null;
-    academic_hk1_exam: number | null;
-    academic_hk2_fortyfive: number | null;
+type StudentInfoMutationPayload = {
+  code: string | null;
+  class_id: string | null;
+  saint_name: string | null;
+  full_name: string;
+  date_of_birth: string | null;
+  phone: string | null;
+  parent_phone1: string | null;
+  parent_phone2: string | null;
+  address: string | null;
+  notes: string | null;
+  academic_hk1_fortyfive: number | null;
+  academic_hk1_exam: number | null;
+  academic_hk2_fortyfive: number | null;
     academic_hk2_exam: number | null;
   };
 
@@ -536,14 +536,14 @@ export default function StudentsPage({
     const trimmedNotes = formData.notes.trim();
 
     return {
-      student_code: trimmedStudentCode.length > 0 ? trimmedStudentCode : null,
+      code: trimmedStudentCode.length > 0 ? trimmedStudentCode : null,
       class_id: sanitizeClassId(formData.class_id) || null,
       saint_name: trimmedSaintName.length > 0 ? trimmedSaintName : null,
       full_name: trimmedFullName,
       date_of_birth: formData.date_of_birth || null,
       phone: trimmedPhone.length > 0 ? trimmedPhone : null,
-      parent_phone_1: trimmedParentPhone1.length > 0 ? trimmedParentPhone1 : null,
-      parent_phone_2: trimmedParentPhone2.length > 0 ? trimmedParentPhone2 : null,
+      parent_phone1: trimmedParentPhone1.length > 0 ? trimmedParentPhone1 : null,
+      parent_phone2: trimmedParentPhone2.length > 0 ? trimmedParentPhone2 : null,
       address: trimmedAddress.length > 0 ? trimmedAddress : null,
       notes: trimmedNotes.length > 0 ? trimmedNotes : null,
       academic_hk1_fortyfive: parseGradeInput(formData.semester_1_45min),
