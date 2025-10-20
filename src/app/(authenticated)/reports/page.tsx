@@ -10,9 +10,11 @@ import {
   fetchAttendanceRecordsForStudents,
   fetchClasses,
   fetchStudentsByClass,
+  fetchStudentScoreDetails,
   type AttendanceRecordRow,
   type ClassRow,
   type StudentBasicRow,
+  type StudentScoreDetailRow,
 } from "@/lib/queries/supabase";
 import type { Sector } from "@/types/database";
 import AttendanceReportPreview, {
@@ -20,6 +22,7 @@ import AttendanceReportPreview, {
   type AttendancePreviewRow,
   type NormalizedPreviewWeekday,
 } from "./attendance-report-preview";
+import ScoreReportPreview, { type ScoreReportPreviewData } from "./score-report-preview";
 
 type WeekOption = {
   value: string;
@@ -317,6 +320,247 @@ function buildAttendancePreviewData({
   };
 }
 
+function toNumberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function calculateAttendanceScore(present?: number | null, total?: number | null) {
+  if (present == null || total == null || total === 0) {
+    return null;
+  }
+  return Number(((present / total) * 10).toFixed(2));
+}
+
+function calculateCatechismAverage(
+  semester145?: number | null,
+  semester1Exam?: number | null,
+  semester245?: number | null,
+  semester2Exam?: number | null,
+) {
+  if (
+    semester145 == null &&
+    semester1Exam == null &&
+    semester245 == null &&
+    semester2Exam == null
+  ) {
+    return null;
+  }
+
+  const sum =
+    (semester145 ?? 0) +
+    (semester245 ?? 0) +
+    (semester1Exam ?? 0) * 2 +
+    (semester2Exam ?? 0) * 2;
+
+  return Number((sum / 6).toFixed(2));
+}
+
+function calculateTotalScore(catechismAvg: number | null, attendanceAvg: number | null) {
+  if (catechismAvg == null && attendanceAvg == null) {
+    return null;
+  }
+  const catechismComponent = catechismAvg ?? 0;
+  const attendanceComponent = attendanceAvg ?? 0;
+  return Number((catechismComponent * 0.6 + attendanceComponent * 0.4).toFixed(2));
+}
+
+type BuildScoreReportArgs = {
+  students: StudentBasicRow[];
+  scoreDetails: StudentScoreDetailRow[];
+  attendanceRecords: AttendanceRecordRow[];
+  className: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+function buildScoreReportPreviewData({
+  students,
+  scoreDetails,
+  attendanceRecords,
+  className,
+  startDate,
+  endDate,
+}: BuildScoreReportArgs): ScoreReportPreviewData {
+  const detailById = new Map<string, StudentScoreDetailRow>();
+  scoreDetails.forEach((detail) => {
+    if (detail && detail.id) {
+      detailById.set(detail.id, detail);
+    }
+  });
+
+  const thursdayDates = new Set<string>();
+  const sundayDates = new Set<string>();
+  const statusesByStudent = new Map<string, Map<string, "present" | "absent">>();
+
+  attendanceRecords.forEach((record) => {
+    const studentId = record.student_id?.trim();
+    const isoDate = record.event_date?.slice(0, 10);
+
+    if (!studentId || !isoDate) {
+      return;
+    }
+
+    const normalizedWeekday = resolveNormalizedWeekday(record.weekday, isoDate);
+    if (normalizedWeekday === "thursday") {
+      thursdayDates.add(isoDate);
+    } else if (normalizedWeekday === "sunday") {
+      sundayDates.add(isoDate);
+    } else {
+      return;
+    }
+
+    let statusMap = statusesByStudent.get(studentId);
+    if (!statusMap) {
+      statusMap = new Map();
+      statusesByStudent.set(studentId, statusMap);
+    }
+
+    const present = isPresentStatus(record.status);
+    const existing = statusMap.get(isoDate);
+    if (existing === "present") {
+      return;
+    }
+    if (present) {
+      statusMap.set(isoDate, "present");
+    } else if (!existing) {
+      statusMap.set(isoDate, "absent");
+    }
+  });
+
+  const thursdayTotal = thursdayDates.size;
+  const sundayTotal = sundayDates.size;
+  const totalSessions = thursdayTotal + sundayTotal;
+  const tieBreaker = new Intl.Collator("vi", { sensitivity: "base" });
+
+  const rows = students.map((student) => {
+    const detail = detailById.get(student.id);
+    const statusMap = statusesByStudent.get(student.id) ?? new Map<string, "present" | "absent">();
+
+    let thursdayPresent = 0;
+    let sundayPresent = 0;
+
+    if (thursdayTotal > 0) {
+      thursdayDates.forEach((date) => {
+        if (statusMap.get(date) === "present") {
+          thursdayPresent += 1;
+        }
+      });
+    }
+
+    if (sundayTotal > 0) {
+      sundayDates.forEach((date) => {
+        if (statusMap.get(date) === "present") {
+          sundayPresent += 1;
+        }
+      });
+    }
+
+    const attendanceAverage =
+      totalSessions > 0 ? calculateAttendanceScore(thursdayPresent + sundayPresent, totalSessions) : null;
+
+    const attendance: ScoreReportPreviewData["rows"][number]["attendance"] = {
+      thursdayPresent,
+      thursdayTotal,
+      thursdayScore: thursdayTotal > 0 ? calculateAttendanceScore(thursdayPresent, thursdayTotal) : null,
+      sundayPresent,
+      sundayTotal,
+      sundayScore: sundayTotal > 0 ? calculateAttendanceScore(sundayPresent, sundayTotal) : null,
+      averageScore: attendanceAverage,
+    };
+
+    const semester145 = toNumberOrNull(detail?.academic_hk1_fortyfive);
+    const semester1Exam = toNumberOrNull(detail?.academic_hk1_exam);
+    const semester245 = toNumberOrNull(detail?.academic_hk2_fortyfive);
+    const semester2Exam = toNumberOrNull(detail?.academic_hk2_exam);
+
+    const catechismAvg = calculateCatechismAverage(semester145, semester1Exam, semester245, semester2Exam);
+
+    const catechism: ScoreReportPreviewData["rows"][number]["catechism"] = {
+      semester145,
+      semester1Exam,
+      semester245,
+      semester2Exam,
+      average: catechismAvg,
+    };
+
+    const totalScore = calculateTotalScore(catechismAvg, attendanceAverage);
+
+    return {
+      studentId: student.id,
+      status: student.status,
+      saintName: student.saint_name,
+      fullName: student.full_name,
+      className,
+      attendance,
+      catechism,
+      totalScore,
+      rank: null,
+      result: null,
+    };
+  });
+
+  const rankById = new Map<string, number>();
+  const rankingCandidates = rows
+    .filter((row) => typeof row.totalScore === "number" && Number.isFinite(row.totalScore))
+    .sort((a, b) => {
+      const scoreDelta = (b.totalScore ?? 0) - (a.totalScore ?? 0);
+      if (Math.abs(scoreDelta) > Number.EPSILON) {
+        return scoreDelta;
+      }
+      const nameA = a.fullName ?? "";
+      const nameB = b.fullName ?? "";
+      return tieBreaker.compare(nameA, nameB);
+    });
+
+  let previousScore: number | null = null;
+  let currentRank = 0;
+  rankingCandidates.forEach((row, index) => {
+    if (previousScore === null || row.totalScore !== previousScore) {
+      currentRank = index + 1;
+      previousScore = row.totalScore ?? null;
+    }
+    rankById.set(row.studentId, currentRank);
+  });
+
+  rows.forEach((row) => {
+    row.rank = rankById.get(row.studentId) ?? null;
+  });
+
+  const resolvedStart = startDate?.trim() ? startDate : undefined;
+  const resolvedEnd = endDate?.trim() ? endDate : undefined;
+
+  let dateRangeLabel = "Không xác định";
+  if (resolvedStart && resolvedEnd) {
+    dateRangeLabel = buildRangeLabel(resolvedStart, resolvedEnd);
+  } else if (resolvedStart) {
+    dateRangeLabel = buildRangeLabel(resolvedStart, resolvedStart);
+  } else if (resolvedEnd) {
+    dateRangeLabel = buildRangeLabel(resolvedEnd, resolvedEnd);
+  }
+
+  return {
+    className,
+    dateRangeLabel,
+    generatedAtLabel: formatGeneratedAtLabel(new Date()),
+    startDate: resolvedStart,
+    endDate: resolvedEnd,
+    rows,
+    summary: {
+      thursdaySessions: thursdayTotal,
+      sundaySessions: sundayTotal,
+      totalSessions,
+    },
+  };
+}
+
 function resolveNormalizedWeekday(
   weekday?: string | null,
   eventDate?: string | null,
@@ -437,7 +681,7 @@ type WorksheetBuildResult = {
   columnWidths: Array<{ wch: number }>;
 };
 
-function buildWorksheetData(preview: AttendanceReportPreviewData): WorksheetBuildResult {
+function buildAttendanceWorksheetData(preview: AttendanceReportPreviewData): WorksheetBuildResult {
   const header = [
     "STT",
     "Tên thánh",
@@ -490,6 +734,83 @@ function buildWorksheetData(preview: AttendanceReportPreviewData): WorksheetBuil
   };
 }
 
+function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuildResult {
+  const header = [
+    "STT",
+    "Trạng thái",
+    "Tên thánh",
+    "Họ và tên",
+    "Lớp",
+    "Đi lễ T5",
+    "Học GL",
+    "Điểm danh TB",
+    "45' HK1",
+    "Thi HK1",
+    "45' HK2",
+    "Thi HK2",
+    "Điểm GL TB",
+    "Điểm tổng",
+    "Hạng",
+    "Kết quả",
+  ];
+
+  const rows = preview.rows.map((row, index) => [
+    index + 1,
+    row.status ?? "",
+    row.saintName ?? "",
+    row.fullName ?? "",
+    row.className ?? preview.className,
+    row.attendance.thursdayScore ?? "",
+    row.attendance.sundayScore ?? "",
+    row.attendance.averageScore ?? "",
+    row.catechism.semester145 ?? "",
+    row.catechism.semester1Exam ?? "",
+    row.catechism.semester245 ?? "",
+    row.catechism.semester2Exam ?? "",
+    row.catechism.average ?? "",
+    row.totalScore ?? "",
+    row.rank ?? "",
+    row.result ?? "",
+  ]);
+
+  const data: (string | number)[][] = [
+    ["Báo cáo điểm số - Lớp " + preview.className],
+    ["Khoảng thời gian: " + preview.dateRangeLabel],
+    [],
+    header,
+    ...rows,
+    [],
+    ["Tổng buổi Thứ 5", preview.summary.thursdaySessions],
+    ["Tổng buổi Chủ nhật", preview.summary.sundaySessions],
+    ["Tổng số buổi", preview.summary.totalSessions],
+    ["Tổng số thiếu nhi", preview.rows.length],
+  ];
+
+  const columnWidths = [
+    { wch: 5 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 26 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 8 },
+    { wch: 12 },
+  ];
+
+  return {
+    data,
+    columnWidths,
+  };
+}
+
 function deriveNameParts(row: Pick<AttendancePreviewRow, "firstName" | "lastName" | "fullName">) {
   const trimmedFullName = row.fullName?.trim() ?? "";
   let firstName = row.firstName?.trim() ?? "";
@@ -535,13 +856,14 @@ function deriveNameParts(row: Pick<AttendancePreviewRow, "firstName" | "lastName
 }
 
 type BuildReportFilenameArgs = {
+  reportType: "attendance" | "score";
   className: string;
   startDate?: string;
   endDate?: string;
   extension: "png" | "xlsx";
 };
 
-function buildReportFilename({ className, startDate, endDate, extension }: BuildReportFilenameArgs) {
+function buildReportFilename({ reportType, className, startDate, endDate, extension }: BuildReportFilenameArgs) {
   const classSegment = slugifyForFilename(className);
   const startSegment = startDate ? startDate.replace(/-/g, "") : null;
   const endSegment = endDate ? endDate.replace(/-/g, "") : null;
@@ -549,11 +871,12 @@ function buildReportFilename({ className, startDate, endDate, extension }: Build
     startSegment && endSegment
       ? startSegment === endSegment
         ? startSegment
-        : `${startSegment}-${endSegment}`
+      : `${startSegment}-${endSegment}`
       : null;
   const timestamp = format(new Date(), "yyyyMMdd_HHmmss");
 
-  const parts = ["bao-cao-diem-danh", classSegment, rangeSegment ?? timestamp];
+  const prefix = reportType === "attendance" ? "bao-cao-diem-danh" : "bao-cao-diem-so";
+  const parts = [prefix, classSegment, rangeSegment ?? timestamp];
   const filename = parts.filter(Boolean).join("_");
   return `${filename}.${extension}`;
 }
@@ -729,6 +1052,7 @@ export default function ReportsPage() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [attendancePreview, setAttendancePreview] = useState<AttendanceReportPreviewData | null>(null);
+  const [scorePreview, setScorePreview] = useState<ScoreReportPreviewData | null>(null);
   const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
   const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const hasDateRange = useMemo(() => {
@@ -737,28 +1061,27 @@ export default function ReportsPage() {
     }
     return Boolean(selectedFromDate && selectedToDate);
   }, [timeMode, activeWeek, selectedFromDate, selectedToDate]);
+  const activePreview = selectedType === "attendance" ? attendancePreview : scorePreview;
   const isExportDisabled =
-    isGeneratingReport ||
-    exportingMode !== null ||
-    !attendancePreview ||
-    attendancePreview.rows.length === 0;
+    isGeneratingReport || exportingMode !== null || !activePreview || activePreview.rows.length === 0;
 
   const handleResetReport = useCallback(() => {
     setAttendancePreview(null);
+    setScorePreview(null);
     setReportError(null);
   }, []);
 
   const handleGenerateReport = useCallback(async () => {
-    if (selectedType !== "attendance") {
-      setAttendancePreview(null);
-      setReportError("Báo cáo điểm số đang được phát triển. Vui lòng chọn báo cáo điểm danh.");
-      return;
-    }
-
     const trimmedClassId = selectedClass.trim();
+
     if (!trimmedClassId) {
       setAttendancePreview(null);
-      setReportError("Vui lòng chọn lớp để tạo báo cáo điểm danh.");
+      setScorePreview(null);
+      setReportError(
+        selectedType === "attendance"
+          ? "Vui lòng chọn lớp để tạo báo cáo điểm danh."
+          : "Vui lòng chọn lớp để tạo bảng điểm.",
+      );
       return;
     }
 
@@ -769,12 +1092,6 @@ export default function ReportsPage() {
       selectedToDate,
     });
 
-    if (!startDate || !endDate) {
-      setAttendancePreview(null);
-      setReportError("Khoảng thời gian chưa hợp lệ. Vui lòng chọn lại.");
-      return;
-    }
-
     setIsGeneratingReport(true);
     setReportError(null);
 
@@ -784,23 +1101,58 @@ export default function ReportsPage() {
         .map((student) => student.id?.trim())
         .filter((value): value is string => Boolean(value));
 
-      const attendanceRecords =
-        studentIds.length > 0
-          ? await fetchAttendanceRecordsForStudents(supabase, studentIds, startDate, endDate)
-          : [];
+      if (selectedType === "attendance") {
+        if (!startDate || !endDate) {
+          setAttendancePreview(null);
+          setScorePreview(null);
+          setReportError("Khoảng thời gian chưa hợp lệ. Vui lòng chọn lại.");
+          return;
+        }
 
-      const previewData = buildAttendancePreviewData({
-        students,
-        attendanceRecords,
-        className: classNameById.get(trimmedClassId) ?? trimmedClassId,
-        startDate,
-        endDate,
-      });
+        const attendanceRecords =
+          studentIds.length > 0
+            ? await fetchAttendanceRecordsForStudents(supabase, studentIds, startDate, endDate)
+            : [];
 
-      setAttendancePreview(previewData);
+        const previewData = buildAttendancePreviewData({
+          students,
+          attendanceRecords,
+          className: classNameById.get(trimmedClassId) ?? trimmedClassId,
+          startDate,
+          endDate,
+        });
+
+        setAttendancePreview(previewData);
+        setScorePreview(null);
+        return;
+      }
+
+      if (selectedType === "score") {
+        const [scoreDetails, attendanceRecords] =
+          studentIds.length > 0
+            ? await Promise.all([
+                fetchStudentScoreDetails(supabase, studentIds),
+                fetchAttendanceRecordsForStudents(supabase, studentIds, startDate, endDate),
+              ])
+            : [[], []];
+
+        const previewData = buildScoreReportPreviewData({
+          students,
+          scoreDetails,
+          attendanceRecords,
+          className: classNameById.get(trimmedClassId) ?? trimmedClassId,
+          startDate,
+          endDate,
+        });
+
+        setScorePreview(previewData);
+        setAttendancePreview(null);
+        return;
+      }
     } catch (error) {
-      console.error("Failed to generate attendance report preview:", error);
+      console.error("Failed to generate report preview:", error);
       setAttendancePreview(null);
+      setScorePreview(null);
       setReportError("Không thể tạo báo cáo. Vui lòng thử lại sau.");
     } finally {
       setIsGeneratingReport(false);
@@ -816,78 +1168,99 @@ export default function ReportsPage() {
     classNameById,
   ]);
 
-  const handleExportImage = useCallback(async () => {
-    if (!attendancePreview || attendancePreview.rows.length === 0) {
-      window.alert("Không có dữ liệu để xuất.");
-      return;
-    }
-    if (!previewContainerRef.current) {
-      window.alert("Không tìm thấy nội dung báo cáo để xuất.");
-      return;
-    }
+  const handleExportImage = useCallback(
+    async (reportType: "attendance" | "score") => {
+      const preview = reportType === "attendance" ? attendancePreview : scorePreview;
 
-    try {
-      setExportingMode("image");
-      const html2canvasModule = await import("html2canvas");
-      const canvas = await html2canvasModule.default(previewContainerRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        logging: false,
-        useCORS: true,
-      });
-      const dataUrl = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.href = dataUrl;
-      link.download = buildReportFilename({
-        className: attendancePreview.className,
-        startDate: attendancePreview.startDate,
-        endDate: attendancePreview.endDate,
-        extension: "png",
-      });
-      link.click();
-    } catch (error) {
-      console.error("Failed to export attendance report PNG:", error);
-      window.alert("Xuất ảnh không thành công. Vui lòng thử lại.");
-    } finally {
-      setExportingMode(null);
-    }
-  }, [attendancePreview]);
+      if (!preview || preview.rows.length === 0) {
+        window.alert("Không có dữ liệu để xuất.");
+        return;
+      }
 
-  const handleExportExcel = useCallback(async () => {
-    if (!attendancePreview || attendancePreview.rows.length === 0) {
-      window.alert("Không có dữ liệu để xuất.");
-      return;
-    }
+      if (!previewContainerRef.current) {
+        window.alert("Không tìm thấy nội dung báo cáo để xuất.");
+        return;
+      }
 
-    try {
-      setExportingMode("excel");
-      const XLSX = await import("xlsx");
-      const { data, columnWidths } = buildWorksheetData(attendancePreview);
-      const worksheet = XLSX.utils.aoa_to_sheet(data);
-      worksheet["!cols"] = columnWidths;
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "BaoCao");
-      XLSX.writeFile(
-        workbook,
-        buildReportFilename({
-          className: attendancePreview.className,
-          startDate: attendancePreview.startDate,
-          endDate: attendancePreview.endDate,
-          extension: "xlsx",
-        }),
-        { compression: true },
-      );
-    } catch (error) {
-      console.error("Failed to export attendance report Excel:", error);
-      window.alert("Xuất Excel không thành công. Vui lòng thử lại.");
-    } finally {
-      setExportingMode(null);
-    }
-  }, [attendancePreview]);
+      try {
+        setExportingMode("image");
+        const html2canvasModule = await import("html2canvas");
+        const canvas = await html2canvasModule.default(previewContainerRef.current, {
+          scale: 2,
+          backgroundColor: "#ffffff",
+          logging: false,
+          useCORS: true,
+        });
+        const dataUrl = canvas.toDataURL("image/png");
+        const link = document.createElement("a");
+        link.href = dataUrl;
+        link.download = buildReportFilename({
+          reportType,
+          className: preview.className,
+          startDate: preview.startDate,
+          endDate: preview.endDate,
+          extension: "png",
+        });
+        link.click();
+      } catch (error) {
+        console.error("Failed to export report PNG:", error);
+        window.alert("Xuất ảnh không thành công. Vui lòng thử lại.");
+      } finally {
+        setExportingMode(null);
+      }
+    },
+    [attendancePreview, scorePreview],
+  );
+
+  const handleExportExcel = useCallback(
+    async (reportType: "attendance" | "score") => {
+      const preview = reportType === "attendance" ? attendancePreview : scorePreview;
+
+      if (!preview || preview.rows.length === 0) {
+        window.alert("Không có dữ liệu để xuất.");
+        return;
+      }
+
+      try {
+        setExportingMode("excel");
+        const XLSX = await import("xlsx");
+        const worksheetData =
+          reportType === "attendance"
+            ? buildAttendanceWorksheetData(preview as AttendanceReportPreviewData)
+            : buildScoreWorksheetData(preview as ScoreReportPreviewData);
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData.data);
+        worksheet["!cols"] = worksheetData.columnWidths;
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(
+          workbook,
+          worksheet,
+          reportType === "attendance" ? "BaoCaoDiemDanh" : "BangDiem",
+        );
+        XLSX.writeFile(
+          workbook,
+          buildReportFilename({
+            reportType,
+            className: preview.className,
+            startDate: preview.startDate,
+            endDate: preview.endDate,
+            extension: "xlsx",
+          }),
+          { compression: true },
+        );
+      } catch (error) {
+        console.error("Failed to export report Excel:", error);
+        window.alert("Xuất Excel không thành công. Vui lòng thử lại.");
+      } finally {
+        setExportingMode(null);
+      }
+    },
+    [attendancePreview, scorePreview],
+  );
 
   const isGenerateDisabled =
     isGeneratingReport ||
-    (selectedType === "attendance" && (!selectedClass || !hasDateRange));
+    !selectedClass ||
+    (selectedType === "attendance" && !hasDateRange);
 
   return (
     <div className="space-y-6">
@@ -1075,16 +1448,29 @@ export default function ReportsPage() {
           </button>
         </div>
       </section>
-      <AttendanceReportPreview
-        ref={previewContainerRef}
-        data={attendancePreview}
-        isLoading={isGeneratingReport}
-        errorMessage={reportError}
-        exportDisabled={isExportDisabled}
-        exportingMode={exportingMode}
-        onExportImage={handleExportImage}
-        onExportExcel={handleExportExcel}
-      />
+      {selectedType === "attendance" ? (
+        <AttendanceReportPreview
+          ref={previewContainerRef}
+          data={attendancePreview}
+          isLoading={isGeneratingReport}
+          errorMessage={reportError}
+          exportDisabled={isExportDisabled}
+          exportingMode={exportingMode}
+          onExportImage={() => handleExportImage("attendance")}
+          onExportExcel={() => handleExportExcel("attendance")}
+        />
+      ) : (
+        <ScoreReportPreview
+          ref={previewContainerRef}
+          data={scorePreview}
+          isLoading={isGeneratingReport}
+          errorMessage={reportError}
+          exportDisabled={isExportDisabled}
+          exportingMode={exportingMode}
+          onExportImage={() => handleExportImage("score")}
+          onExportExcel={() => handleExportExcel("score")}
+        />
+      )}
     </div>
   );
 }

@@ -64,6 +64,22 @@ export type StudentBasicRow = {
   status?: string | null;
 };
 
+export type StudentScoreDetailRow = {
+  id: string;
+  academic_hk1_fortyfive?: number | string | null;
+  academic_hk1_exam?: number | string | null;
+  academic_hk2_fortyfive?: number | string | null;
+  academic_hk2_exam?: number | string | null;
+  attendance_hk1_present?: number | string | null;
+  attendance_hk1_total?: number | string | null;
+  attendance_hk2_present?: number | string | null;
+  attendance_hk2_total?: number | string | null;
+  attendance_thursday_present?: number | string | null;
+  attendance_thursday_total?: number | string | null;
+  attendance_sunday_present?: number | string | null;
+  attendance_sunday_total?: number | string | null;
+};
+
 export type TeacherRow = {
   id: string;
   saint_name: string | null;
@@ -89,6 +105,27 @@ type StudentOptionalAvailability = Record<StudentOptionalColumn, boolean>;
 let studentOptionalColumnsAvailability: StudentOptionalAvailability | null = null;
 let studentOptionalColumnsAvailabilityPromise: Promise<StudentOptionalAvailability> | null = null;
 
+const STUDENT_SCORE_OPTIONAL_COLUMNS = [
+  "academic_hk1_fortyfive",
+  "academic_hk1_exam",
+  "academic_hk2_fortyfive",
+  "academic_hk2_exam",
+  "attendance_hk1_present",
+  "attendance_hk1_total",
+  "attendance_hk2_present",
+  "attendance_hk2_total",
+  "attendance_thursday_present",
+  "attendance_thursday_total",
+  "attendance_sunday_present",
+  "attendance_sunday_total",
+] as const;
+
+type StudentScoreColumn = (typeof STUDENT_SCORE_OPTIONAL_COLUMNS)[number];
+type StudentScoreColumnsAvailability = Record<StudentScoreColumn, boolean>;
+
+let studentScoreColumnsAvailability: StudentScoreColumnsAvailability | null = null;
+let studentScoreColumnsAvailabilityPromise: Promise<StudentScoreColumnsAvailability> | null = null;
+
 function createStudentOptionalAvailability(defaultValue: boolean): StudentOptionalAvailability {
   return STUDENT_TABLE_OPTIONAL_COLUMNS.reduce<StudentOptionalAvailability>((accumulator, column) => {
     accumulator[column] = defaultValue;
@@ -110,14 +147,47 @@ function buildStudentSelectColumns(availability: Record<StudentOptionalColumn, b
   return columns.join(", ");
 }
 
-function extractMissingStudentColumn(error: { message?: string | null; details?: string | null }): StudentOptionalColumn | null {
+function createStudentScoreColumnsAvailability(defaultValue: boolean): StudentScoreColumnsAvailability {
+  return STUDENT_SCORE_OPTIONAL_COLUMNS.reduce<StudentScoreColumnsAvailability>((accumulator, column) => {
+    accumulator[column] = defaultValue;
+    return accumulator;
+  }, {} as StudentScoreColumnsAvailability);
+}
+
+function buildStudentScoreSelectColumns(availability: StudentScoreColumnsAvailability) {
+  const columns: string[] = ["id"];
+  for (const column of STUDENT_SCORE_OPTIONAL_COLUMNS) {
+    if (availability[column]) {
+      columns.push(column);
+    }
+  }
+  return columns.join(", ");
+}
+
+function isStudentScoreColumn(column: string): column is StudentScoreColumn {
+  return (STUDENT_SCORE_OPTIONAL_COLUMNS as readonly string[]).includes(column);
+}
+
+function extractMissingColumnFromError(error: {
+  message?: string | null;
+  details?: string | null;
+}): string | null {
   const source = error.message ?? error.details ?? "";
   const match = source.match(/column\s+(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)\s+does not exist/i);
   if (!match) {
     return null;
   }
-  const column = match[1] as StudentOptionalColumn;
-  return (STUDENT_TABLE_OPTIONAL_COLUMNS as readonly string[]).includes(column) ? column : null;
+  return match[1] ?? null;
+}
+
+function extractMissingStudentColumn(error: { message?: string | null; details?: string | null }): StudentOptionalColumn | null {
+  const column = extractMissingColumnFromError(error);
+  if (!column) {
+    return null;
+  }
+  return (STUDENT_TABLE_OPTIONAL_COLUMNS as readonly string[]).includes(column)
+    ? (column as StudentOptionalColumn)
+    : null;
 }
 
 export function isIgnorableSupabaseError(error?: { code?: string }) {
@@ -185,6 +255,62 @@ async function discoverStudentOptionalColumnsAvailability(
   return availability;
 }
 
+async function discoverStudentScoreColumnsAvailability(
+  supabase: SupabaseClient,
+): Promise<StudentScoreColumnsAvailability> {
+  const availability = createStudentScoreColumnsAvailability(false);
+
+  const { data: sampleRow, error } = await supabase
+    .from("students")
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isIgnorableSupabaseError(error)) {
+      console.warn("Supabase students score column discovery fallback:", error.message);
+    } else {
+      console.warn("Failed to discover students score columns", error);
+    }
+  }
+
+  if (sampleRow && typeof sampleRow === "object") {
+    for (const column of STUDENT_SCORE_OPTIONAL_COLUMNS) {
+      if (Object.prototype.hasOwnProperty.call(sampleRow, column)) {
+        availability[column] = true;
+      }
+    }
+    return availability;
+  }
+
+  const { data: metadataRows, error: metadataError } = await supabase
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", "public")
+    .eq("table_name", "students")
+    .in("column_name", STUDENT_SCORE_OPTIONAL_COLUMNS as unknown as string[]);
+
+  if (metadataError) {
+    if (isIgnorableSupabaseError(metadataError)) {
+      console.warn("Supabase students score column metadata fallback:", metadataError.message);
+    } else {
+      console.warn("Failed to retrieve students score column metadata", metadataError);
+    }
+    return availability;
+  }
+
+  if (Array.isArray(metadataRows)) {
+    for (const row of metadataRows as Array<{ column_name?: string | null }>) {
+      const columnName = row.column_name;
+      if (typeof columnName === "string" && (STUDENT_SCORE_OPTIONAL_COLUMNS as readonly string[]).includes(columnName)) {
+        availability[columnName as StudentScoreColumn] = true;
+      }
+    }
+  }
+
+  return availability;
+}
+
 async function ensureStudentOptionalColumnsAvailability(
   supabase: SupabaseClient,
 ): Promise<StudentOptionalAvailability> {
@@ -207,6 +333,30 @@ async function ensureStudentOptionalColumnsAvailability(
 
   studentOptionalColumnsAvailability = resolved;
   return { ...studentOptionalColumnsAvailability } as StudentOptionalAvailability;
+}
+
+async function ensureStudentScoreColumnsAvailability(
+  supabase: SupabaseClient,
+): Promise<StudentScoreColumnsAvailability> {
+  if (studentScoreColumnsAvailability) {
+    return { ...studentScoreColumnsAvailability };
+  }
+
+  if (!studentScoreColumnsAvailabilityPromise) {
+    studentScoreColumnsAvailabilityPromise = discoverStudentScoreColumnsAvailability(supabase);
+  }
+
+  let resolved = createStudentScoreColumnsAvailability(false);
+  try {
+    resolved = await studentScoreColumnsAvailabilityPromise;
+  } catch (error) {
+    console.warn("Failed to resolve students score column availability", error);
+  } finally {
+    studentScoreColumnsAvailabilityPromise = null;
+  }
+
+  studentScoreColumnsAvailability = resolved;
+  return { ...studentScoreColumnsAvailability };
 }
 
 export async function fetchSectors(supabase: SupabaseClient): Promise<SectorRow[]> {
@@ -454,6 +604,71 @@ export async function fetchStudentsByClass(
     console.warn("Supabase students by class query fallback:", error.message);
     return [];
   }
+}
+
+export async function fetchStudentScoreDetails(
+  supabase: SupabaseClient,
+  studentIds: string[],
+): Promise<StudentScoreDetailRow[]> {
+  if (studentIds.length === 0) {
+    return [];
+  }
+
+  const trimmedIds = studentIds
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  if (trimmedIds.length === 0) {
+    return [];
+  }
+
+  const results: StudentScoreDetailRow[] = [];
+  const initialAvailability = await ensureStudentScoreColumnsAvailability(supabase);
+  let availability: StudentScoreColumnsAvailability = { ...initialAvailability };
+
+  for (let index = 0; index < trimmedIds.length; index += SUPABASE_IN_QUERY_CHUNK) {
+    const chunk = trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK);
+
+    let retry = 0;
+    while (true) {
+      const selectColumns = buildStudentScoreSelectColumns(availability);
+      const query = supabase.from("students").select(selectColumns).in("id", chunk);
+      const { data, error } = await query;
+
+      if (!error) {
+        if (Array.isArray(data)) {
+          results.push(...(data as StudentScoreDetailRow[]));
+        }
+        break;
+      }
+
+      if (!isIgnorableSupabaseError(error)) {
+        throw new Error(error.message);
+      }
+
+      if (error.code === "42703") {
+        const missingColumn = extractMissingColumnFromError(error);
+        if (missingColumn && isStudentScoreColumn(missingColumn) && availability[missingColumn]) {
+          availability = { ...availability, [missingColumn]: false };
+          studentScoreColumnsAvailability = {
+            ...(studentScoreColumnsAvailability ?? availability),
+            [missingColumn]: false,
+          };
+          retry += 1;
+          if (retry > STUDENT_SCORE_OPTIONAL_COLUMNS.length) {
+            console.warn("Supabase student score query fallback after removing missing columns:", error.message);
+            break;
+          }
+          continue;
+        }
+      }
+
+      console.warn("Supabase student score query fallback:", error.message);
+      break;
+    }
+  }
+
+  return results;
 }
 
 export type AttendanceRecordRow = {
