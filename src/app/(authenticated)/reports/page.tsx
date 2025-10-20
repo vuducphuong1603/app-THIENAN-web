@@ -716,6 +716,8 @@ const COLOR_PROPERTIES_FOR_EXPORT = [
   "outline-color",
 ] as const;
 
+const UNSUPPORTED_COLOR_FUNCTION_PREFIXES = ["oklch(", "oklab(", "lab("] as const;
+
 type ColorPropertyName = (typeof COLOR_PROPERTIES_FOR_EXPORT)[number];
 type RgbTriple = [number, number, number];
 
@@ -930,6 +932,75 @@ function convertUnsupportedCssColor(raw: string) {
   return null;
 }
 
+function containsUnsupportedColorFunction(value: string) {
+  if (!value) {
+    return false;
+  }
+  const lower = value.toLowerCase();
+  return UNSUPPORTED_COLOR_FUNCTION_PREFIXES.some((prefix) => lower.includes(prefix));
+}
+
+function findColorFunctionEnd(value: string, openIndex: number) {
+  let depth = 0;
+  for (let index = openIndex; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function replaceUnsupportedColorFunctions(value: string) {
+  const lower = value.toLowerCase();
+  let cursor = 0;
+  let result = "";
+  let hasChanges = false;
+
+  while (cursor < value.length) {
+    let nextIndex = Number.POSITIVE_INFINITY;
+    let matchedPrefix: (typeof UNSUPPORTED_COLOR_FUNCTION_PREFIXES)[number] | null = null;
+
+    for (const prefix of UNSUPPORTED_COLOR_FUNCTION_PREFIXES) {
+      const index = lower.indexOf(prefix, cursor);
+      if (index !== -1 && index < nextIndex) {
+        nextIndex = index;
+        matchedPrefix = prefix;
+      }
+    }
+
+    if (matchedPrefix == null) {
+      result += value.slice(cursor);
+      break;
+    }
+
+    result += value.slice(cursor, nextIndex);
+    const openIndex = nextIndex + matchedPrefix.length - 1;
+    const endIndex = findColorFunctionEnd(value, openIndex);
+    if (endIndex === -1) {
+      result += value.slice(nextIndex);
+      break;
+    }
+
+    const raw = value.slice(nextIndex, endIndex + 1);
+    const converted = convertUnsupportedCssColor(raw);
+    if (converted) {
+      result += converted;
+      hasChanges = true;
+    } else {
+      result += raw;
+    }
+    cursor = endIndex + 1;
+  }
+
+  return hasChanges ? result : value;
+}
+
 function sanitizeCloneColors(doc: Document) {
   const view = doc.defaultView;
   if (!view) {
@@ -945,16 +1016,29 @@ function sanitizeCloneColors(doc: Document) {
       return;
     }
     const computed = view.getComputedStyle(element);
-    COLOR_PROPERTIES_FOR_EXPORT.forEach((property: ColorPropertyName) => {
-      const value = computed.getPropertyValue(property);
-      if (!value || (!value.includes("lab(") && !value.includes("oklab(") && !value.includes("oklch("))) {
+    const processed = new Set<string>();
+
+    const processProperty = (property: string | null) => {
+      if (!property || processed.has(property)) {
         return;
       }
-      const converted = convertUnsupportedCssColor(value);
-      if (converted) {
-        element.style.setProperty(property, converted);
+      processed.add(property);
+      const value = computed.getPropertyValue(property);
+      if (!containsUnsupportedColorFunction(value)) {
+        return;
       }
+      const sanitized = replaceUnsupportedColorFunctions(value);
+      if (sanitized !== value) {
+        element.style.setProperty(property, sanitized);
+      }
+    };
+
+    COLOR_PROPERTIES_FOR_EXPORT.forEach((property: ColorPropertyName) => {
+      processProperty(property);
     });
+    for (let index = 0; index < computed.length; index += 1) {
+      processProperty(computed.item(index));
+    }
   });
 }
 
