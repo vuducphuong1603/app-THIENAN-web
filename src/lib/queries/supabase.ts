@@ -23,6 +23,8 @@ export type StudentRow = {
   id: string;
   class_id?: string | null;
   saint_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
   full_name?: string | null;
   code?: string | null;
   student_code?: string | null;
@@ -50,6 +52,18 @@ export type StudentRow = {
 
 export type StudentClassRow = Pick<StudentRow, "id" | "class_id">;
 
+export type StudentBasicRow = {
+  id: string;
+  class_id?: string | null;
+  saint_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
+  student_code?: string | null;
+  code?: string | null;
+  status?: string | null;
+};
+
 export type TeacherRow = {
   id: string;
   saint_name: string | null;
@@ -65,6 +79,7 @@ export type TeacherRow = {
 const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
 const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
 const SUPABASE_MAX_PARALLEL_PAGES = 4;
+const SUPABASE_IN_QUERY_CHUNK = 100;
 
 export function isIgnorableSupabaseError(error?: { code?: string }) {
   if (!error?.code) {
@@ -258,4 +273,94 @@ export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRo
   }
 
   return allRows;
+}
+
+export async function fetchStudentsByClass(
+  supabase: SupabaseClient,
+  classId: string,
+): Promise<StudentBasicRow[]> {
+  if (!classId.trim()) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("students")
+    .select("id, class_id, saint_name, first_name, last_name, full_name, student_code, code, status")
+    .eq("class_id", classId.trim())
+    .neq("status", "DELETED")
+    .order("full_name", { ascending: true, nullsFirst: false });
+
+  if (error) {
+    if (isIgnorableSupabaseError(error)) {
+      console.warn("Supabase students by class query fallback:", error.message);
+      return [];
+    }
+    throw new Error(error.message);
+  }
+
+  return (data as StudentBasicRow[] | null) ?? [];
+}
+
+export type AttendanceRecordRow = {
+  student_id: string;
+  event_date: string | null;
+  status?: string | null;
+  weekday?: string | null;
+  student_class_id?: string | null;
+  student_class_name?: string | null;
+};
+
+export async function fetchAttendanceRecordsForStudents(
+  supabase: SupabaseClient,
+  studentIds: string[],
+  startDate?: string,
+  endDate?: string,
+): Promise<AttendanceRecordRow[]> {
+  if (studentIds.length === 0) {
+    return [];
+  }
+
+  const trimmedIds = studentIds
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  if (trimmedIds.length === 0) {
+    return [];
+  }
+
+  const results: AttendanceRecordRow[] = [];
+
+  for (let index = 0; index < trimmedIds.length; index += SUPABASE_IN_QUERY_CHUNK) {
+    const chunk = trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK);
+
+    let query = supabase
+      .from("attendance_records")
+      .select("student_id, event_date, status, weekday, student_class_id, student_class_name")
+      .in("student_id", chunk)
+      .order("event_date", { ascending: true })
+      .order("student_id", { ascending: true });
+
+    if (startDate) {
+      query = query.gte("event_date", startDate);
+    }
+    if (endDate) {
+      query = query.lte("event_date", endDate);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      if (isIgnorableSupabaseError(error)) {
+        console.warn("Supabase attendance records query fallback:", error.message);
+        continue;
+      }
+      throw new Error(error.message);
+    }
+
+    if (Array.isArray(data)) {
+      results.push(...(data as AttendanceRecordRow[]));
+    }
+  }
+
+  return results;
 }

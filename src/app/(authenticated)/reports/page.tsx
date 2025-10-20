@@ -1,13 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { endOfWeek, format, startOfWeek, subWeeks } from "date-fns";
+import clsx from "clsx";
 
 import { useAuth } from "@/providers/auth-provider";
-import { fetchClasses } from "@/lib/queries/supabase";
-import type { ClassRow } from "@/lib/queries/supabase";
+import {
+  fetchAttendanceRecordsForStudents,
+  fetchClasses,
+  fetchStudentsByClass,
+  type AttendanceRecordRow,
+  type ClassRow,
+  type StudentBasicRow,
+} from "@/lib/queries/supabase";
 import type { Sector } from "@/types/database";
+import AttendanceReportPreview, {
+  type AttendanceReportPreviewData,
+  type AttendancePreviewRow,
+  type NormalizedPreviewWeekday,
+} from "./attendance-report-preview";
 
 type WeekOption = {
   value: string;
@@ -141,15 +153,421 @@ function inferClassSector(cls: ClassRow): Sector | null {
   );
 }
 
-const reportData = [
-  {
-    id: "report-1",
-    type: "Điểm danh",
-    time: "Tuần 3 - 2026",
-    scope: "Ngành Chiên",
-    createdAt: "25/01/2026",
-  },
-];
+type ResolveDateRangeArgs = {
+  timeMode: TimeMode;
+  activeWeek?: WeekOption;
+  selectedFromDate?: string;
+  selectedToDate?: string;
+};
+
+function resolveDateRange({
+  timeMode,
+  activeWeek,
+  selectedFromDate,
+  selectedToDate,
+}: ResolveDateRangeArgs) {
+  if (timeMode === "week") {
+    return {
+      startDate: activeWeek?.startDate,
+      endDate: activeWeek?.endDate,
+    };
+  }
+
+  const from = selectedFromDate && selectedFromDate.trim().length > 0 ? selectedFromDate : undefined;
+  const to = selectedToDate && selectedToDate.trim().length > 0 ? selectedToDate : undefined;
+
+  return {
+    startDate: from,
+    endDate: to,
+  };
+}
+
+type BuildAttendancePreviewArgs = {
+  students: StudentBasicRow[];
+  attendanceRecords: AttendanceRecordRow[];
+  className: string;
+  startDate: string;
+  endDate: string;
+};
+
+function buildAttendancePreviewData({
+  students,
+  attendanceRecords,
+  className,
+  startDate,
+  endDate,
+}: BuildAttendancePreviewArgs): AttendanceReportPreviewData {
+  const dateMeta = new Map<
+    string,
+    {
+      normalizedWeekday: NormalizedPreviewWeekday;
+      weekdayLabel: string;
+    }
+  >();
+  const statusesByStudent = new Map<string, Map<string, "present" | "absent">>();
+
+  attendanceRecords.forEach((record) => {
+    const studentId = record.student_id?.trim();
+    const eventDate = record.event_date?.slice(0, 10);
+
+    if (!studentId || !eventDate) {
+      return;
+    }
+
+    const normalizedWeekday = resolveNormalizedWeekday(record.weekday, eventDate);
+    if (!dateMeta.has(eventDate)) {
+      dateMeta.set(eventDate, {
+        normalizedWeekday,
+        weekdayLabel: buildWeekdayLabel(normalizedWeekday),
+      });
+    }
+
+    let statusMap = statusesByStudent.get(studentId);
+    if (!statusMap) {
+      statusMap = new Map();
+      statusesByStudent.set(studentId, statusMap);
+    }
+
+    const isPresent = isPresentStatus(record.status);
+    const existing = statusMap.get(eventDate);
+
+    if (existing === "present") {
+      return;
+    }
+
+    if (isPresent) {
+      statusMap.set(eventDate, "present");
+    } else if (!existing) {
+      statusMap.set(eventDate, "absent");
+    }
+  });
+
+  const sortedDates = Array.from(dateMeta.keys()).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
+  const columns = sortedDates.map((isoDate) => {
+    const meta = dateMeta.get(isoDate);
+    const normalizedWeekday = meta?.normalizedWeekday ?? "other";
+    return {
+      isoDate,
+      displayDate: formatShortDateLabel(isoDate),
+      weekdayLabel: meta?.weekdayLabel ?? buildWeekdayLabel(normalizedWeekday),
+      normalizedWeekday,
+    };
+  });
+
+  let thursdayPresent = 0;
+  let sundayPresent = 0;
+  let totalPresent = 0;
+
+  statusesByStudent.forEach((dateMap) => {
+    dateMap.forEach((status, isoDate) => {
+      if (status !== "present") {
+        return;
+      }
+      const normalizedWeekday = dateMeta.get(isoDate)?.normalizedWeekday ?? resolveNormalizedWeekday(null, isoDate);
+      if (normalizedWeekday === "thursday") {
+        thursdayPresent += 1;
+      } else if (normalizedWeekday === "sunday") {
+        sundayPresent += 1;
+      }
+      totalPresent += 1;
+    });
+  });
+
+  const rows = students.map((student) => {
+    const statusMap = statusesByStudent.get(student.id) ?? new Map<string, "present" | "absent">();
+    const statuses: Record<string, "present" | "absent" | "unmarked"> = {};
+    statusMap.forEach((value, isoDate) => {
+      statuses[isoDate] = value;
+    });
+
+    return {
+      studentId: student.id,
+      saintName: student.saint_name,
+      firstName: student.first_name,
+      lastName: student.last_name,
+      fullName: student.full_name,
+      statuses,
+    };
+  });
+
+  const missingCount = students.reduce((accumulator, student) => {
+    const statusMap = statusesByStudent.get(student.id);
+    if (!statusMap || statusMap.size === 0) {
+      return accumulator + 1;
+    }
+    return accumulator;
+  }, 0);
+
+  return {
+    className,
+    dateRangeLabel: buildRangeLabel(startDate, endDate),
+    generatedAtLabel: formatGeneratedAtLabel(new Date()),
+    startDate,
+    endDate,
+    columns,
+    rows,
+    summary: {
+      thursdayPresent,
+      sundayPresent,
+      missingCount,
+      totalMarks: totalPresent,
+      totalStudents: students.length,
+    },
+  };
+}
+
+function resolveNormalizedWeekday(
+  weekday?: string | null,
+  eventDate?: string | null,
+): NormalizedPreviewWeekday {
+  if (weekday) {
+    const normalized = normalizeText(weekday);
+    if (normalized.includes("SUNDAY") || normalized.includes("CHUNHAT") || normalized === "CN" || normalized === "SUN") {
+      return "sunday";
+    }
+    if (
+      normalized.includes("THURSDAY") ||
+      normalized.includes("THUNAM") ||
+      normalized.includes("THU5") ||
+      normalized === "T5"
+    ) {
+      return "thursday";
+    }
+  }
+
+  if (eventDate) {
+    const parsed = new Date(`${eventDate}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      const weekdayIndex = parsed.getUTCDay();
+      if (weekdayIndex === 0) {
+        return "sunday";
+      }
+      if (weekdayIndex === 4) {
+        return "thursday";
+      }
+    }
+  }
+
+  return "other";
+}
+
+function buildWeekdayLabel(weekday: NormalizedPreviewWeekday) {
+  switch (weekday) {
+    case "thursday":
+      return "Thứ 5";
+    case "sunday":
+      return "Chủ nhật";
+    default:
+      return "Khác";
+  }
+}
+
+function formatShortDateLabel(value: string) {
+  if (!value) return "";
+  try {
+    const parsed = new Date(`${value}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return format(parsed, "dd/MM");
+  } catch {
+    return value;
+  }
+}
+
+function formatGeneratedAtLabel(date: Date) {
+  try {
+    return format(date, "dd/MM/yyyy HH:mm");
+  } catch {
+    return date.toLocaleString("vi-VN");
+  }
+}
+
+function buildRangeLabel(startDate: string, endDate: string) {
+  const startLabel = formatIsoDateLabel(startDate);
+  const endLabel = formatIsoDateLabel(endDate);
+
+  if (startDate === endDate) {
+    return startLabel || endLabel || "Không xác định";
+  }
+
+  if (startLabel && endLabel) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  return startLabel || endLabel || "Không xác định";
+}
+
+function isPresentStatus(status?: string | null) {
+  if (!status) {
+    return false;
+  }
+  const normalized = normalizeText(status);
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized === "PRESENT" ||
+    normalized === "YES" ||
+    normalized === "TRUE" ||
+    normalized === "1" ||
+    normalized === "ATTEND" ||
+    normalized === "ATTENDED" ||
+    normalized === "CO" ||
+    normalized === "X"
+  ) {
+    return true;
+  }
+  if (
+    normalized === "ABSENT" ||
+    normalized === "NO" ||
+    normalized === "FALSE" ||
+    normalized === "0" ||
+    normalized === "VANG" ||
+    normalized === "NGHI"
+  ) {
+    return false;
+  }
+  return normalized === "P";
+}
+
+type WorksheetBuildResult = {
+  data: (string | number)[][];
+  columnWidths: Array<{ wch: number }>;
+};
+
+function buildWorksheetData(preview: AttendanceReportPreviewData): WorksheetBuildResult {
+  const header = [
+    "STT",
+    "Tên thánh",
+    "Họ",
+    "Tên",
+    ...preview.columns.map((column) => `${column.weekdayLabel} ${column.displayDate}`),
+  ];
+
+  const rows = preview.rows.map((row, index) => {
+    const names = deriveNameParts(row);
+    const statuses = preview.columns.map((column) =>
+      row.statuses[column.isoDate] === "present" ? "X" : "",
+    );
+
+    return [
+      index + 1,
+      row.saintName ?? "",
+      names.lastName,
+      names.firstName,
+      ...statuses,
+    ];
+  });
+
+  const data: (string | number)[][] = [
+    [`Báo cáo điểm danh - Lớp ${preview.className}`],
+    [`Khoảng thời gian: ${preview.dateRangeLabel}`],
+    [],
+    header,
+    ...rows,
+    [],
+    ["Có mặt Thứ 5", preview.summary.thursdayPresent],
+    ["Có mặt Chủ nhật", preview.summary.sundayPresent],
+    ["Học sinh chưa điểm danh", preview.summary.missingCount],
+    ["Tổng lượt điểm danh", preview.summary.totalMarks],
+    ["Tổng số học sinh", preview.summary.totalStudents],
+  ];
+
+  const baseColumns = [
+    { wch: 5 },
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 16 },
+  ];
+
+  const dynamicColumns = preview.columns.map(() => ({ wch: 12 }));
+
+  return {
+    data,
+    columnWidths: [...baseColumns, ...dynamicColumns],
+  };
+}
+
+function deriveNameParts(row: Pick<AttendancePreviewRow, "firstName" | "lastName" | "fullName">) {
+  const trimmedFullName = row.fullName?.trim() ?? "";
+  let firstName = row.firstName?.trim() ?? "";
+  let lastName = row.lastName?.trim() ?? "";
+
+  if (!trimmedFullName) {
+    const fallback = [lastName, firstName].filter(Boolean).join(" ").trim();
+    return {
+      fullName: fallback,
+      firstName,
+      lastName,
+    };
+  }
+
+  const fullName = trimmedFullName;
+
+  if (!firstName) {
+    const parts = fullName.split(/\s+/);
+    firstName = parts.pop() ?? "";
+    lastName = parts.join(" ").trim();
+  } else if (!lastName) {
+    const lowerFull = fullName.toLowerCase();
+    const lowerFirst = firstName.toLowerCase();
+    if (lowerFull.endsWith(lowerFirst)) {
+      lastName = fullName.slice(0, fullName.length - firstName.length).trim();
+    }
+  }
+
+  if (!lastName) {
+    const parts = fullName.split(/\s+/);
+    if (parts.length > 1) {
+      lastName = parts.slice(0, -1).join(" ").trim();
+    } else {
+      lastName = fullName;
+    }
+  }
+
+  return {
+    fullName,
+    firstName,
+    lastName,
+  };
+}
+
+type BuildReportFilenameArgs = {
+  className: string;
+  startDate?: string;
+  endDate?: string;
+  extension: "png" | "xlsx";
+};
+
+function buildReportFilename({ className, startDate, endDate, extension }: BuildReportFilenameArgs) {
+  const classSegment = slugifyForFilename(className);
+  const startSegment = startDate ? startDate.replace(/-/g, "") : null;
+  const endSegment = endDate ? endDate.replace(/-/g, "") : null;
+  const rangeSegment =
+    startSegment && endSegment
+      ? startSegment === endSegment
+        ? startSegment
+        : `${startSegment}-${endSegment}`
+      : null;
+  const timestamp = format(new Date(), "yyyyMMdd_HHmmss");
+
+  const parts = ["bao-cao-diem-danh", classSegment, rangeSegment ?? timestamp];
+  const filename = parts.filter(Boolean).join("_");
+  return `${filename}.${extension}`;
+}
+
+function slugifyForFilename(value: string) {
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || "lop";
+}
 
 export default function ReportsPage() {
   const { supabase } = useAuth();
@@ -218,6 +636,24 @@ export default function ReportsPage() {
     }
     return "Chọn một tuần để xem khoảng thời gian.";
   }, [timeMode, activeWeek, selectedFromDate, selectedToDate]);
+
+  const classNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    classRows.forEach((cls) => {
+      const trimmedId = cls.id?.trim();
+      if (!trimmedId) {
+        return;
+      }
+      const trimmedName = cls.name?.trim();
+      const trimmedCode = cls.code?.trim();
+      const displayName =
+        (trimmedName && trimmedName.length > 0 ? trimmedName : null) ??
+        (trimmedCode && trimmedCode.length > 0 ? trimmedCode : null) ??
+        trimmedId;
+      map.set(trimmedId, displayName);
+    });
+    return map;
+  }, [classRows]);
 
   const classesBySector = useMemo(() => {
     const initial: Record<Sector, ClassOption[]> = {
@@ -289,6 +725,169 @@ export default function ReportsPage() {
       : sectorClassOptions.length === 0
         ? "Không có lớp cho ngành này"
         : "Tất cả lớp";
+
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [attendancePreview, setAttendancePreview] = useState<AttendanceReportPreviewData | null>(null);
+  const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const hasDateRange = useMemo(() => {
+    if (timeMode === "week") {
+      return Boolean(activeWeek?.startDate && activeWeek?.endDate);
+    }
+    return Boolean(selectedFromDate && selectedToDate);
+  }, [timeMode, activeWeek, selectedFromDate, selectedToDate]);
+  const isExportDisabled =
+    isGeneratingReport ||
+    exportingMode !== null ||
+    !attendancePreview ||
+    attendancePreview.rows.length === 0;
+
+  const handleResetReport = useCallback(() => {
+    setAttendancePreview(null);
+    setReportError(null);
+  }, []);
+
+  const handleGenerateReport = useCallback(async () => {
+    if (selectedType !== "attendance") {
+      setAttendancePreview(null);
+      setReportError("Báo cáo điểm số đang được phát triển. Vui lòng chọn báo cáo điểm danh.");
+      return;
+    }
+
+    const trimmedClassId = selectedClass.trim();
+    if (!trimmedClassId) {
+      setAttendancePreview(null);
+      setReportError("Vui lòng chọn lớp để tạo báo cáo điểm danh.");
+      return;
+    }
+
+    const { startDate, endDate } = resolveDateRange({
+      timeMode,
+      activeWeek,
+      selectedFromDate,
+      selectedToDate,
+    });
+
+    if (!startDate || !endDate) {
+      setAttendancePreview(null);
+      setReportError("Khoảng thời gian chưa hợp lệ. Vui lòng chọn lại.");
+      return;
+    }
+
+    setIsGeneratingReport(true);
+    setReportError(null);
+
+    try {
+      const students = await fetchStudentsByClass(supabase, trimmedClassId);
+      const studentIds = students
+        .map((student) => student.id?.trim())
+        .filter((value): value is string => Boolean(value));
+
+      const attendanceRecords =
+        studentIds.length > 0
+          ? await fetchAttendanceRecordsForStudents(supabase, studentIds, startDate, endDate)
+          : [];
+
+      const previewData = buildAttendancePreviewData({
+        students,
+        attendanceRecords,
+        className: classNameById.get(trimmedClassId) ?? trimmedClassId,
+        startDate,
+        endDate,
+      });
+
+      setAttendancePreview(previewData);
+    } catch (error) {
+      console.error("Failed to generate attendance report preview:", error);
+      setAttendancePreview(null);
+      setReportError("Không thể tạo báo cáo. Vui lòng thử lại sau.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  }, [
+    selectedType,
+    selectedClass,
+    timeMode,
+    activeWeek,
+    selectedFromDate,
+    selectedToDate,
+    supabase,
+    classNameById,
+  ]);
+
+  const handleExportImage = useCallback(async () => {
+    if (!attendancePreview || attendancePreview.rows.length === 0) {
+      window.alert("Không có dữ liệu để xuất.");
+      return;
+    }
+    if (!previewContainerRef.current) {
+      window.alert("Không tìm thấy nội dung báo cáo để xuất.");
+      return;
+    }
+
+    try {
+      setExportingMode("image");
+      const html2canvasModule = await import("html2canvas");
+      const canvas = await html2canvasModule.default(previewContainerRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        logging: false,
+        useCORS: true,
+      });
+      const dataUrl = canvas.toDataURL("image/png");
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = buildReportFilename({
+        className: attendancePreview.className,
+        startDate: attendancePreview.startDate,
+        endDate: attendancePreview.endDate,
+        extension: "png",
+      });
+      link.click();
+    } catch (error) {
+      console.error("Failed to export attendance report PNG:", error);
+      window.alert("Xuất ảnh không thành công. Vui lòng thử lại.");
+    } finally {
+      setExportingMode(null);
+    }
+  }, [attendancePreview]);
+
+  const handleExportExcel = useCallback(async () => {
+    if (!attendancePreview || attendancePreview.rows.length === 0) {
+      window.alert("Không có dữ liệu để xuất.");
+      return;
+    }
+
+    try {
+      setExportingMode("excel");
+      const XLSX = await import("xlsx");
+      const { data, columnWidths } = buildWorksheetData(attendancePreview);
+      const worksheet = XLSX.utils.aoa_to_sheet(data);
+      worksheet["!cols"] = columnWidths;
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "BaoCao");
+      XLSX.writeFile(
+        workbook,
+        buildReportFilename({
+          className: attendancePreview.className,
+          startDate: attendancePreview.startDate,
+          endDate: attendancePreview.endDate,
+          extension: "xlsx",
+        }),
+        { compression: true },
+      );
+    } catch (error) {
+      console.error("Failed to export attendance report Excel:", error);
+      window.alert("Xuất Excel không thành công. Vui lòng thử lại.");
+    } finally {
+      setExportingMode(null);
+    }
+  }, [attendancePreview]);
+
+  const isGenerateDisabled =
+    isGeneratingReport ||
+    (selectedType === "attendance" && (!selectedClass || !hasDateRange));
 
   return (
     <div className="space-y-6">
@@ -454,34 +1053,38 @@ export default function ReportsPage() {
         )}
 
         <div className="flex justify-end gap-2">
-          <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900">Hủy</button>
-          <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Tạo báo cáo</button>
+          <button
+            type="button"
+            onClick={handleResetReport}
+            className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900 transition hover:border-slate-400 hover:text-slate-950"
+          >
+            Hủy
+          </button>
+          <button
+            type="button"
+            onClick={handleGenerateReport}
+            disabled={isGenerateDisabled}
+            className={clsx(
+              "rounded-lg px-4 py-2 text-sm font-semibold text-white transition",
+              isGenerateDisabled
+                ? "cursor-not-allowed bg-emerald-200"
+                : "bg-emerald-600 hover:bg-emerald-700",
+            )}
+          >
+            {isGeneratingReport ? "Đang tạo..." : "Tạo báo cáo"}
+          </button>
         </div>
       </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-lg font-semibold text-slate-800">Xem trước báo cáo</h3>
-        <div className="mt-3 flex items-center justify-between">
-          <div>
-            <p className="text-sm font-semibold text-slate-700">{selectedType === "attendance" ? "Báo cáo điểm danh" : "Báo cáo điểm số"}</p>
-            <p className="text-xs text-slate-500">Chọn thông số và nhấn xuất để tải xuống.</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900">Xuất ảnh PNG</button>
-            <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Xuất Excel</button>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {reportData.map((report) => (
-            <div key={report.id} className="rounded-lg border border-slate-200 p-4 text-sm text-slate-600">
-              <p className="font-semibold text-slate-700">{report.type}</p>
-              <p>Khoảng thời gian: {report.time}</p>
-              <p>Ngành/Lớp: {report.scope}</p>
-              <p>Ngày tạo: {report.createdAt}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      <AttendanceReportPreview
+        ref={previewContainerRef}
+        data={attendancePreview}
+        isLoading={isGeneratingReport}
+        errorMessage={reportError}
+        exportDisabled={isExportDisabled}
+        exportingMode={exportingMode}
+        onExportImage={handleExportImage}
+        onExportExcel={handleExportExcel}
+      />
     </div>
   );
 }
