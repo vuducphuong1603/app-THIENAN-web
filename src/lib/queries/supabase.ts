@@ -81,7 +81,38 @@ const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
 const SUPABASE_MAX_PARALLEL_PAGES = 4;
 const SUPABASE_IN_QUERY_CHUNK = 100;
 
-let studentNamePartsColumnsAvailable: boolean | null = null;
+const STUDENT_TABLE_BASE_COLUMNS = ["id", "class_id", "full_name", "status"] as const;
+const STUDENT_TABLE_OPTIONAL_COLUMNS = ["saint_name", "student_code", "code", "first_name", "last_name"] as const;
+type StudentOptionalColumn = (typeof STUDENT_TABLE_OPTIONAL_COLUMNS)[number];
+
+let studentOptionalColumnsAvailability: Record<StudentOptionalColumn, boolean> | null = null;
+
+function createDefaultStudentOptionalAvailability(): Record<StudentOptionalColumn, boolean> {
+  return STUDENT_TABLE_OPTIONAL_COLUMNS.reduce<Record<StudentOptionalColumn, boolean>>((accumulator, column) => {
+    accumulator[column] = true;
+    return accumulator;
+  }, {} as Record<StudentOptionalColumn, boolean>);
+}
+
+function buildStudentSelectColumns(availability: Record<StudentOptionalColumn, boolean>) {
+  const columns: string[] = [...STUDENT_TABLE_BASE_COLUMNS];
+  for (const column of STUDENT_TABLE_OPTIONAL_COLUMNS) {
+    if (availability[column]) {
+      columns.push(column);
+    }
+  }
+  return columns.join(", ");
+}
+
+function extractMissingStudentColumn(error: { message?: string | null; details?: string | null }): StudentOptionalColumn | null {
+  const source = error.message ?? error.details ?? "";
+  const match = source.match(/column\s+(?:[a-zA-Z0-9_]+\.)?([a-zA-Z0-9_]+)\s+does not exist/i);
+  if (!match) {
+    return null;
+  }
+  const column = match[1] as StudentOptionalColumn;
+  return (STUDENT_TABLE_OPTIONAL_COLUMNS as readonly string[]).includes(column) ? column : null;
+}
 
 export function isIgnorableSupabaseError(error?: { code?: string }) {
   if (!error?.code) {
@@ -286,54 +317,49 @@ export async function fetchStudentsByClass(
   }
 
   const trimmedClassId = classId.trim();
-  const baseSelect = "id, class_id, saint_name, full_name, student_code, code, status";
-  const includeNameParts = studentNamePartsColumnsAvailable !== false;
-  const selectColumns = includeNameParts ? `${baseSelect}, first_name, last_name` : baseSelect;
+  const initialAvailability =
+    studentOptionalColumnsAvailability !== null
+      ? { ...studentOptionalColumnsAvailability }
+      : createDefaultStudentOptionalAvailability();
 
-  const baseQuery = supabase
-    .from("students")
-    .select(selectColumns)
-    .eq("class_id", trimmedClassId)
-    .neq("status", "DELETED")
-    .order("full_name", { ascending: true, nullsFirst: false });
+  let availability = { ...initialAvailability };
 
-  const { data, error } = await baseQuery;
+  while (true) {
+    const selectColumns = buildStudentSelectColumns(availability);
+    const { data, error } = await supabase
+      .from("students")
+      .select(selectColumns)
+      .eq("class_id", trimmedClassId)
+      .neq("status", "DELETED")
+      .order("full_name", { ascending: true, nullsFirst: false });
 
-  if (error) {
-    if (isIgnorableSupabaseError(error)) {
-      console.warn("Supabase students by class query fallback:", error.message);
-
-      if (!includeNameParts || error.code !== "42703") {
-        return [];
-      }
-
-      studentNamePartsColumnsAvailable = false;
-
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from("students")
-        .select(baseSelect)
-        .eq("class_id", trimmedClassId)
-        .neq("status", "DELETED")
-        .order("full_name", { ascending: true, nullsFirst: false });
-
-      if (fallbackError) {
-        if (isIgnorableSupabaseError(fallbackError)) {
-          console.warn("Supabase students by class secondary fallback:", fallbackError.message);
-          return [];
-        }
-        throw new Error(fallbackError.message);
-      }
-
-      return (fallbackData as StudentBasicRow[] | null) ?? [];
+    if (!error) {
+      studentOptionalColumnsAvailability = { ...availability };
+      return (data as StudentBasicRow[] | null) ?? [];
     }
-    throw new Error(error.message);
-  }
 
-  if (includeNameParts && studentNamePartsColumnsAvailable === null) {
-    studentNamePartsColumnsAvailable = true;
-  }
+    if (!isIgnorableSupabaseError(error)) {
+      throw new Error(error.message);
+    }
 
-  return (data as StudentBasicRow[] | null) ?? [];
+    if (error.code === "42703") {
+      const missingColumn = extractMissingStudentColumn(error);
+      if (missingColumn && availability[missingColumn]) {
+        console.warn(
+          `Supabase students by class query missing column '${missingColumn}', retrying without it.`,
+        );
+        availability = { ...availability, [missingColumn]: false };
+        if (studentOptionalColumnsAvailability === null) {
+          studentOptionalColumnsAvailability = createDefaultStudentOptionalAvailability();
+        }
+        studentOptionalColumnsAvailability[missingColumn] = false;
+        continue;
+      }
+    }
+
+    console.warn("Supabase students by class query fallback:", error.message);
+    return [];
+  }
 }
 
 export type AttendanceRecordRow = {
