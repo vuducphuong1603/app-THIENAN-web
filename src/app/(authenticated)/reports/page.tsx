@@ -328,6 +328,7 @@ export default function ReportsPage() {
                 <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Từ ngày</label>
                 <input
                   type="date"
+                  lang="vi"
                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   value={selectedFromDate}
                   max={selectedToDate || undefined}
@@ -347,6 +348,7 @@ export default function ReportsPage() {
                 <label className="text-xs font-medium uppercase tracking-wide text-slate-500">Đến ngày</label>
                 <input
                   type="date"
+                  lang="vi"
                   className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
                   value={selectedToDate}
                   min={selectedFromDate || undefined}
