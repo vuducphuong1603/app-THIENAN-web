@@ -74,16 +74,16 @@ const SUMMARY_CARD_META = [
   },
 ];
 
-const WEEKDAY_CELL_CLASS: Record<NormalizedPreviewWeekday, string> = {
-  thursday: "bg-sky-50 border-sky-100",
-  sunday: "bg-emerald-50 border-emerald-100",
-  other: "bg-slate-50 border-slate-100",
+const WEEKDAY_HEADER_CLASS: Record<NormalizedPreviewWeekday, string> = {
+  thursday: "bg-sky-100 border-sky-200 text-sky-700",
+  sunday: "bg-emerald-100 border-emerald-200 text-emerald-700",
+  other: "bg-slate-100 border-slate-200 text-slate-600",
 };
 
-const WEEKDAY_TEXT_CLASS: Record<NormalizedPreviewWeekday, string> = {
-  thursday: "text-sky-700",
-  sunday: "text-emerald-700",
-  other: "text-slate-600",
+const WEEKDAY_CELL_CLASS: Record<NormalizedPreviewWeekday, string> = {
+  thursday: "border-sky-200",
+  sunday: "border-emerald-200",
+  other: "border-slate-200",
 };
 
 const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPreviewProps>(
@@ -181,92 +181,136 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
 
         <div
           ref={ref}
-          className="overflow-hidden rounded-lg border border-slate-200"
+          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
         >
-          <div className="border-b border-slate-200 bg-slate-50 px-4 py-2">
-            <p className="text-sm font-semibold text-slate-700">Lớp: {data.className}</p>
-            <p className="text-xs text-slate-500">Khoảng thời gian: {data.dateRangeLabel}</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th className="border-b border-slate-200 px-4 py-3 font-semibold text-slate-600">STT</th>
-                  <th className="border-b border-slate-200 px-4 py-3 font-semibold text-slate-600">Tên thánh</th>
-                  <th className="border-b border-slate-200 px-4 py-3 font-semibold text-slate-600">Họ và tên</th>
-                  {data.columns.map((column) => (
-                    <th
-                      key={column.isoDate}
-                      className={clsx(
-                        "border-b px-4 py-3 text-center font-semibold",
-                        WEEKDAY_CELL_CLASS[column.normalizedWeekday],
-                        WEEKDAY_TEXT_CLASS[column.normalizedWeekday],
-                      )}
-                    >
-                      <div>{column.displayDate}</div>
-                      <div className="text-[11px] font-medium opacity-80">{column.weekdayLabel}</div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.rows.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={3 + data.columns.length}
-                      className="px-4 py-6 text-center text-sm text-slate-500"
-                    >
-                      Không tìm thấy dữ liệu điểm danh cho khoảng thời gian này.
-                    </td>
-                  </tr>
-                ) : (
-                  data.rows.map((row, index) => {
-                    const fullName =
-                      row.fullName?.trim() ||
-                      [row.lastName, row.firstName]
-                        .filter((value) => value && value.trim().length > 0)
-                        .join(" ")
-                        .trim();
-                    const derivedFirstName = row.firstName?.trim() || fullName.split(" ").pop() || "";
-                    const derivedLastName =
-                      row.lastName?.trim() ||
-                      fullName.replace(derivedFirstName, "").trim();
+          <div className="px-8 py-6">
+            <div className="flex flex-col gap-5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400 bg-amber-100 text-[11px] font-bold uppercase tracking-widest text-amber-700 shadow-sm">
+                    TNTT
+                  </div>
+                  <div className="text-xs text-slate-600 sm:text-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 sm:text-[13px]">
+                      Phong trào Thiếu Nhi Thánh Thể Việt Nam
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 sm:text-[13px]">Giáo xứ Thiên Ân • Xứ đoàn Fatima</p>
+                  </div>
+                </div>
+                <div className="text-right text-[11px] leading-5 text-slate-600 sm:text-xs">
+                  <p className="font-semibold uppercase tracking-wider text-slate-700">Giáo phận Phú Cường</p>
+                  <p>Giáo hạt Thuận An</p>
+                  <p>Giáo xứ Thiên Ân</p>
+                </div>
+              </div>
 
-                    return (
-                      <tr key={row.studentId} className={clsx(index % 2 === 0 ? "bg-white" : "bg-slate-50/60")}>
-                        <td className="border-t border-slate-200 px-4 py-3 text-sm text-slate-600">{index + 1}</td>
-                        <td className="border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          {row.saintName || "—"}
-                        </td>
-                        <td className="border-t border-slate-200 px-4 py-3 text-sm text-slate-700">
-                          <div className="font-semibold text-slate-900">{fullName || "—"}</div>
-                          <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
-                            <span>Họ: {derivedLastName || "—"}</span>
-                            <span>Tên: {derivedFirstName || "—"}</span>
+              <div className="text-center">
+                <p className="text-[13px] font-semibold uppercase tracking-widest text-emerald-600">
+                  Sổ theo dõi - Báo cáo
+                </p>
+                <h3 className="mt-1 text-xl font-bold uppercase tracking-wide text-slate-900 sm:text-2xl">
+                  Điểm danh tham dự Thánh lễ Thứ Năm và Chúa Nhật
+                </h3>
+                <p className="mt-2 text-sm text-slate-600">
+                  Lớp: <span className="font-semibold text-slate-800">{data.className}</span> • Khoảng thời gian:{" "}
+                  <span className="font-semibold text-slate-800">{data.dateRangeLabel}</span>
+                </p>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full border border-slate-200 border-collapse text-sm text-slate-700">
+                  <thead>
+                    <tr className="text-xs uppercase tracking-widest text-slate-600">
+                      <th className="w-14 border border-slate-200 bg-slate-100 px-3 py-3 text-center font-semibold">
+                        STT
+                      </th>
+                      <th className="min-w-[140px] border border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">
+                        Tên thánh
+                      </th>
+                      <th className="min-w-[220px] border border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">
+                        Họ và tên
+                      </th>
+                      {data.columns.map((column) => (
+                        <th
+                          key={column.isoDate}
+                          className={clsx(
+                            "min-w-[90px] border px-3 py-3 text-center font-semibold",
+                            WEEKDAY_HEADER_CLASS[column.normalizedWeekday],
+                          )}
+                        >
+                          <div className="text-sm font-bold leading-tight">{column.displayDate}</div>
+                          <div className="mt-1 text-[11px] font-medium uppercase tracking-wide">
+                            {column.weekdayLabel}
                           </div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.rows.length === 0 ? (
+                      <tr>
+                        <td
+                          colSpan={3 + data.columns.length}
+                          className="px-4 py-6 text-center text-sm text-slate-500"
+                        >
+                          Không tìm thấy dữ liệu điểm danh cho khoảng thời gian này.
                         </td>
-                        {data.columns.map((column) => {
-                          const status = row.statuses[column.isoDate];
-                          const isPresent = status === "present";
-                          return (
-                            <td
-                              key={`${row.studentId}-${column.isoDate}`}
-                              className={clsx(
-                                "border-t px-4 py-3 text-center text-sm font-semibold",
-                                WEEKDAY_CELL_CLASS[column.normalizedWeekday],
-                                isPresent ? "text-emerald-600" : "text-slate-400",
-                              )}
-                            >
-                              {isPresent ? "X" : ""}
-                            </td>
-                          );
-                        })}
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                    ) : (
+                      data.rows.map((row, index) => {
+                        const displayName =
+                          row.fullName?.trim() ||
+                          [row.lastName, row.firstName]
+                            .filter((value) => value && value.trim().length > 0)
+                            .join(" ")
+                            .trim();
+
+                        return (
+                          <tr key={row.studentId} className={clsx(index % 2 === 0 ? "bg-white" : "bg-slate-50/60")}>
+                            <td className="border border-slate-200 px-3 py-2 text-center text-sm font-semibold text-slate-600">
+                              {index + 1}
+                            </td>
+                            <td className="border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                              {row.saintName || "—"}
+                            </td>
+                            <td className="border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">
+                              {displayName || "—"}
+                            </td>
+                            {data.columns.map((column) => {
+                              const status = row.statuses[column.isoDate];
+                              const isPresent = status === "present";
+                              return (
+                                <td
+                                  key={`${row.studentId}-${column.isoDate}`}
+                                  className={clsx(
+                                    "border px-3 py-2 text-center text-sm font-semibold uppercase tracking-widest",
+                                    WEEKDAY_CELL_CLASS[column.normalizedWeekday],
+                                    isPresent ? "text-emerald-600" : "text-slate-300",
+                                  )}
+                                >
+                                  {isPresent ? "x" : ""}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex flex-wrap items-start justify-between gap-4 text-[11px] text-slate-500 sm:text-xs">
+                <div className="space-y-1">
+                  <p>X: Có mặt • Trống: Vắng hoặc chưa điểm danh.</p>
+                  <p>Báo cáo được tạo lúc {data.generatedAtLabel}.</p>
+                </div>
+                <div className="text-right leading-6">
+                  <p>Người lập biểu: ___________________________</p>
+                  <p>Giáo lý viên phụ trách: ___________________</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
