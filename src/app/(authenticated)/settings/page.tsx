@@ -25,8 +25,14 @@ type ProfileFormState = {
 
 const profileFields: Array<keyof ProfileFormState> = ["saint_name", "full_name", "phone", "address"];
 
+type PasswordFormState = {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+};
+
 export default function SettingsPage() {
-  const { session, refreshProfile } = useAuth();
+  const { session, refreshProfile, supabase } = useAuth();
   const [activeTab, setActiveTab] = useState<string>("profile");
   const [role, setRole] = useState<AppRole | null>(null);
   const [profileForm, setProfileForm] = useState<ProfileFormState>({
@@ -40,6 +46,15 @@ export default function SettingsPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [passwordForm, setPasswordForm] = useState<PasswordFormState>({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordFeedback, setPasswordFeedback] = useState<{ type: "success" | "error"; message: string } | null>(
+    null
+  );
 
   useEffect(() => {
     if (session.isLoading) return;
@@ -170,6 +185,101 @@ export default function SettingsPage() {
     }
   };
 
+  const handlePasswordInputChange =
+    (field: keyof PasswordFormState) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setPasswordForm((prev) => ({ ...prev, [field]: event.target.value }));
+      setPasswordFeedback(null);
+    };
+
+  const handleChangePassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const current = passwordForm.currentPassword.trim();
+    const next = passwordForm.newPassword.trim();
+    const confirm = passwordForm.confirmPassword.trim();
+
+    if (!session.session?.userId) {
+      setPasswordFeedback({ type: "error", message: "Không tìm thấy phiên đăng nhập." });
+      return;
+    }
+
+    if (!current) {
+      setPasswordFeedback({ type: "error", message: "Vui lòng nhập mật khẩu hiện tại." });
+      return;
+    }
+
+    if (!next || next.length < 6) {
+      setPasswordFeedback({ type: "error", message: "Mật khẩu mới phải có ít nhất 6 ký tự." });
+      return;
+    }
+
+    if (next !== confirm) {
+      setPasswordFeedback({ type: "error", message: "Mật khẩu mới và xác nhận không trùng khớp." });
+      return;
+    }
+
+    if (current === next) {
+      setPasswordFeedback({ type: "error", message: "Mật khẩu mới phải khác mật khẩu hiện tại." });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    setPasswordFeedback(null);
+
+    try {
+      const {
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser();
+
+      if (getUserError || !user) {
+        setPasswordFeedback({ type: "error", message: "Không xác định được tài khoản để đổi mật khẩu." });
+        return;
+      }
+
+      const metadataPhone =
+        typeof user.user_metadata?.phone === "string" ? user.user_metadata.phone.trim() : null;
+      const loginEmail = user.email ?? (metadataPhone ? `${metadataPhone}@phone.local`.toLowerCase() : null);
+
+      if (!loginEmail) {
+        setPasswordFeedback({ type: "error", message: "Không tìm thấy thông tin đăng nhập hợp lệ." });
+        return;
+      }
+
+      const { error: reauthError } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password: current,
+      });
+
+      if (reauthError) {
+        setPasswordFeedback({ type: "error", message: "Mật khẩu hiện tại không chính xác." });
+        return;
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({ password: next });
+      if (updateError) {
+        setPasswordFeedback({
+          type: "error",
+          message: updateError.message ?? "Không thể cập nhật mật khẩu. Vui lòng thử lại.",
+        });
+        return;
+      }
+
+      setPasswordFeedback({ type: "success", message: "Đổi mật khẩu thành công." });
+      setPasswordForm({
+        currentPassword: "",
+        newPassword: "",
+        confirmPassword: "",
+      });
+    } catch (error) {
+      console.error("Failed to change password", error);
+      setPasswordFeedback({ type: "error", message: "Có lỗi xảy ra khi đổi mật khẩu. Vui lòng thử lại." });
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <header>
@@ -264,15 +374,58 @@ export default function SettingsPage() {
         )}
 
         {activeTab === "password" && (
-          <div className="grid gap-3 md:grid-cols-2">
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Mật khẩu hiện tại" type="password" />
+          <form className="grid gap-3 md:grid-cols-2" onSubmit={handleChangePassword}>
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              placeholder="Mật khẩu hiện tại"
+              type="password"
+              value={passwordForm.currentPassword}
+              onChange={handlePasswordInputChange("currentPassword")}
+              disabled={isChangingPassword}
+              autoComplete="current-password"
+            />
             <div />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Mật khẩu mới" type="password" />
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Nhập lại mật khẩu" type="password" />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              placeholder="Mật khẩu mới"
+              type="password"
+              value={passwordForm.newPassword}
+              onChange={handlePasswordInputChange("newPassword")}
+              disabled={isChangingPassword}
+              autoComplete="new-password"
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              placeholder="Nhập lại mật khẩu"
+              type="password"
+              value={passwordForm.confirmPassword}
+              onChange={handlePasswordInputChange("confirmPassword")}
+              disabled={isChangingPassword}
+              autoComplete="new-password"
+            />
+
+            {passwordFeedback && (
+              <div
+                className={`md:col-span-2 rounded-lg border px-3 py-2 text-sm ${
+                  passwordFeedback.type === "success"
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-rose-200 bg-rose-50 text-rose-700"
+                }`}
+              >
+                {passwordFeedback.message}
+              </div>
+            )}
+
             <div className="md:col-span-2 flex justify-end">
-              <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Đổi mật khẩu</button>
+              <button
+                type="submit"
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
+                disabled={isChangingPassword}
+              >
+                {isChangingPassword ? "Đang đổi..." : "Đổi mật khẩu"}
+              </button>
             </div>
-          </div>
+          </form>
         )}
 
         {activeTab === "academic" && (

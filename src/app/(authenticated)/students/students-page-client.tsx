@@ -1,6 +1,6 @@
 "use client";
 
-import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle } from "lucide-react";
+import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -268,6 +268,7 @@ export default function StudentsPage({
   });
   const [savingGradesId, setSavingGradesId] = useState<string | null>(null);
   const [gradeSaveError, setGradeSaveError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   type GradeMutationPayload = {
     semester_1_45min: number | null;
     semester_1_exam: number | null;
@@ -515,6 +516,17 @@ type StudentInfoMutationPayload = {
     setStudents(transformed);
   }, [studentRows, convertStudentRow, nameCollator]);
 
+  useEffect(() => {
+    if (!successMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => setSuccessMessage(null), 4000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [successMessage]);
+
   const filteredStudents = students.filter((student) => {
     const matchesSearch =
       student.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -557,6 +569,8 @@ type StudentInfoMutationPayload = {
     if (isSavingInfo) {
       return;
     }
+
+    setSuccessMessage(null);
 
     const trimmedFullName = formData.full_name.trim();
     if (!trimmedFullName) {
@@ -615,6 +629,12 @@ type StudentInfoMutationPayload = {
 
       await queryClient.invalidateQueries({ queryKey: ["students", "list"] });
 
+      setSuccessMessage(
+        mode === "create"
+          ? "Thêm thiếu nhi thành công."
+          : "Cập nhật thông tin thiếu nhi thành công.",
+      );
+
       setShowCreateModal(false);
       setShowEditModal(false);
       setSelectedStudent(null);
@@ -641,6 +661,7 @@ type StudentInfoMutationPayload = {
           ? error.message
           : "Không thể lưu thông tin thiếu nhi lên Supabase. Vui lòng thử lại.";
       setStudentSaveError(message);
+      setSuccessMessage(null);
     } finally {
       setIsSavingStudent(false);
     }
@@ -706,6 +727,8 @@ type StudentInfoMutationPayload = {
       return;
     }
 
+    setSuccessMessage(null);
+
     const nextGrades = {
       semester_1_45min: parseGradeInput(gradeEdits.semester_1_45min),
       semester_1_exam: parseGradeInput(gradeEdits.semester_1_exam),
@@ -726,6 +749,8 @@ type StudentInfoMutationPayload = {
     setSavingGradesId(studentId);
 
     try {
+      const targetStudent = students.find((student) => student.id === studentId);
+
       const persistedGrades = await gradeUpdateMutation.mutateAsync({
         studentId,
         updates: nextGrades,
@@ -772,6 +797,12 @@ type StudentInfoMutationPayload = {
         }),
       );
 
+      setSuccessMessage(
+        targetStudent
+          ? `Đã cập nhật điểm cho ${targetStudent.full_name}.`
+          : "Đã cập nhật điểm thiếu nhi thành công.",
+      );
+
       setEditingGradesId(null);
     } catch (error) {
       console.error("Failed to save student grades:", error);
@@ -780,6 +811,7 @@ type StudentInfoMutationPayload = {
           ? error.message
           : "Không thể lưu điểm lên Supabase. Vui lòng thử lại.";
       setGradeSaveError(message);
+      setSuccessMessage(null);
     } finally {
       setSavingGradesId(null);
     }
@@ -818,6 +850,13 @@ type StudentInfoMutationPayload = {
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           <AlertTriangle className="h-4 w-4" />
           Không thể tải dữ liệu thiếu nhi: {queryError.message}
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          <CheckCircle2 className="h-4 w-4" />
+          {successMessage}
         </div>
       )}
 
