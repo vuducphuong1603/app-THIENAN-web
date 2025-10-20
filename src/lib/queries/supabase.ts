@@ -84,14 +84,20 @@ const SUPABASE_IN_QUERY_CHUNK = 100;
 const STUDENT_TABLE_BASE_COLUMNS = ["id", "class_id", "full_name"] as const;
 const STUDENT_TABLE_OPTIONAL_COLUMNS = ["status", "saint_name", "student_code", "code", "first_name", "last_name"] as const;
 type StudentOptionalColumn = (typeof STUDENT_TABLE_OPTIONAL_COLUMNS)[number];
+type StudentOptionalAvailability = Record<StudentOptionalColumn, boolean>;
 
-let studentOptionalColumnsAvailability: Record<StudentOptionalColumn, boolean> | null = null;
+let studentOptionalColumnsAvailability: StudentOptionalAvailability | null = null;
+let studentOptionalColumnsAvailabilityPromise: Promise<StudentOptionalAvailability> | null = null;
 
-function createDefaultStudentOptionalAvailability(): Record<StudentOptionalColumn, boolean> {
-  return STUDENT_TABLE_OPTIONAL_COLUMNS.reduce<Record<StudentOptionalColumn, boolean>>((accumulator, column) => {
-    accumulator[column] = true;
+function createStudentOptionalAvailability(defaultValue: boolean): StudentOptionalAvailability {
+  return STUDENT_TABLE_OPTIONAL_COLUMNS.reduce<StudentOptionalAvailability>((accumulator, column) => {
+    accumulator[column] = defaultValue;
     return accumulator;
-  }, {} as Record<StudentOptionalColumn, boolean>);
+  }, {} as StudentOptionalAvailability);
+}
+
+function createEmptyStudentOptionalAvailability(): StudentOptionalAvailability {
+  return createStudentOptionalAvailability(false);
 }
 
 function buildStudentSelectColumns(availability: Record<StudentOptionalColumn, boolean>) {
@@ -119,6 +125,88 @@ export function isIgnorableSupabaseError(error?: { code?: string }) {
     return false;
   }
   return SUPABASE_IGNORED_ERROR_CODES.has(error.code);
+}
+
+async function discoverStudentOptionalColumnsAvailability(
+  supabase: SupabaseClient,
+): Promise<StudentOptionalAvailability> {
+  const availability = createEmptyStudentOptionalAvailability();
+
+  const { data: sampleRow, error } = await supabase
+    .from("students")
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (isIgnorableSupabaseError(error)) {
+      console.warn("Supabase students column discovery fallback:", error.message);
+    } else {
+      console.warn("Failed to discover students optional columns", error);
+    }
+  }
+
+  if (sampleRow && typeof sampleRow === "object") {
+    for (const column of STUDENT_TABLE_OPTIONAL_COLUMNS) {
+      if (Object.prototype.hasOwnProperty.call(sampleRow, column)) {
+        availability[column] = true;
+      }
+    }
+    return availability;
+  }
+
+  const { data: metadataRows, error: metadataError } = await supabase
+    .from("information_schema.columns")
+    .select("column_name")
+    .eq("table_schema", "public")
+    .eq("table_name", "students");
+
+  if (metadataError) {
+    if (isIgnorableSupabaseError(metadataError)) {
+      console.warn("Supabase students column metadata fallback:", metadataError.message);
+    } else {
+      console.warn("Failed to retrieve students column metadata", metadataError);
+    }
+    return availability;
+  }
+
+  if (Array.isArray(metadataRows)) {
+    for (const row of metadataRows as Array<{ column_name?: string | null }>) {
+      const columnName = row.column_name;
+      if (
+        typeof columnName === "string" &&
+        (STUDENT_TABLE_OPTIONAL_COLUMNS as readonly string[]).includes(columnName)
+      ) {
+        availability[columnName as StudentOptionalColumn] = true;
+      }
+    }
+  }
+
+  return availability;
+}
+
+async function ensureStudentOptionalColumnsAvailability(
+  supabase: SupabaseClient,
+): Promise<StudentOptionalAvailability> {
+  if (studentOptionalColumnsAvailability) {
+    return { ...studentOptionalColumnsAvailability } as StudentOptionalAvailability;
+  }
+
+  if (!studentOptionalColumnsAvailabilityPromise) {
+    studentOptionalColumnsAvailabilityPromise = discoverStudentOptionalColumnsAvailability(supabase);
+  }
+
+  let resolved = createEmptyStudentOptionalAvailability();
+  try {
+    resolved = await studentOptionalColumnsAvailabilityPromise;
+  } catch (error) {
+    console.warn("Failed to resolve students optional column availability", error);
+  } finally {
+    studentOptionalColumnsAvailabilityPromise = null;
+  }
+
+  studentOptionalColumnsAvailability = resolved;
+  return { ...studentOptionalColumnsAvailability } as StudentOptionalAvailability;
 }
 
 export async function fetchSectors(supabase: SupabaseClient): Promise<SectorRow[]> {
@@ -317,12 +405,9 @@ export async function fetchStudentsByClass(
   }
 
   const trimmedClassId = classId.trim();
-  const initialAvailability =
-    studentOptionalColumnsAvailability !== null
-      ? { ...studentOptionalColumnsAvailability }
-      : createDefaultStudentOptionalAvailability();
+  const initialAvailability = await ensureStudentOptionalColumnsAvailability(supabase);
 
-  let availability = { ...initialAvailability };
+  let availability: StudentOptionalAvailability = { ...initialAvailability };
 
   while (true) {
     const selectColumns = buildStudentSelectColumns(availability);
@@ -355,9 +440,13 @@ export async function fetchStudentsByClass(
         );
         availability = { ...availability, [missingColumn]: false };
         if (studentOptionalColumnsAvailability === null) {
-          studentOptionalColumnsAvailability = createDefaultStudentOptionalAvailability();
+          studentOptionalColumnsAvailability = { ...availability, [missingColumn]: false };
+        } else {
+          studentOptionalColumnsAvailability = {
+            ...studentOptionalColumnsAvailability,
+            [missingColumn]: false,
+          };
         }
-        studentOptionalColumnsAvailability[missingColumn] = false;
         continue;
       }
     }
