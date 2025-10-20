@@ -83,7 +83,7 @@ function formatScore(value: number | null | undefined) {
   return SCORE_NUMBER_FORMATTER.format(value);
 }
 
-const ScoreReportPreview = forwardRef<HTMLDivElement, ScoreReportPreviewProps>(
+const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
   ({ data, isLoading, errorMessage, onExportExcel, onExportImage, exportDisabled, exportingMode }, ref) => {
     const isExporting = exportingMode != null;
     const isImageDisabled = exportDisabled || isExporting;
@@ -119,7 +119,11 @@ const ScoreReportPreview = forwardRef<HTMLDivElement, ScoreReportPreviewProps>(
     }
 
     return (
-      <section ref={ref} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section
+        ref={ref}
+        data-report-export-root="true"
+        className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Image

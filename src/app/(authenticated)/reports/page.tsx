@@ -706,6 +706,258 @@ function isPresentStatus(status?: string | null) {
   return normalized === "P";
 }
 
+const COLOR_PROPERTIES_FOR_EXPORT = [
+  "color",
+  "background-color",
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
+  "outline-color",
+] as const;
+
+type ColorPropertyName = (typeof COLOR_PROPERTIES_FOR_EXPORT)[number];
+type RgbTriple = [number, number, number];
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function clamp01(value: number) {
+  return clamp(value, 0, 1);
+}
+
+function linearToSrgbChannel(value: number) {
+  const clamped = clamp(value, 0, 1);
+  if (clamped <= 0.0031308) {
+    return clamped * 12.92;
+  }
+  return 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
+}
+
+function formatRgbColor(rgb: RgbTriple, alpha: number) {
+  const [r, g, b] = rgb.map((channel) => Math.round(clamp01(channel) * 255));
+  const normalizedAlpha = clamp01(alpha);
+  if (normalizedAlpha >= 0.999) {
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+  const alphaString = (Math.round(normalizedAlpha * 1000) / 1000).toString().replace(/0+$/, "").replace(/\.$/, "");
+  return `rgba(${r}, ${g}, ${b}, ${alphaString})`;
+}
+
+function parseAlphaChannel(raw?: string | null) {
+  if (!raw) {
+    return 1;
+  }
+  const trimmed = raw.trim().toLowerCase();
+  if (!trimmed || trimmed === "none") {
+    return 1;
+  }
+  if (trimmed.endsWith("%")) {
+    const value = parseFloat(trimmed.slice(0, -1));
+    if (Number.isNaN(value)) {
+      return 1;
+    }
+    return clamp01(value / 100);
+  }
+  const numeric = parseFloat(trimmed);
+  if (Number.isNaN(numeric)) {
+    return 1;
+  }
+  return clamp01(numeric);
+}
+
+function parseAngle(raw: string) {
+  const trimmed = raw.trim().toLowerCase();
+  if (trimmed.endsWith("deg")) {
+    return (parseFloat(trimmed.slice(0, -3)) * Math.PI) / 180;
+  }
+  if (trimmed.endsWith("rad")) {
+    return parseFloat(trimmed.slice(0, -3));
+  }
+  if (trimmed.endsWith("turn")) {
+    return parseFloat(trimmed.slice(0, -4)) * 2 * Math.PI;
+  }
+  if (trimmed.endsWith("grad")) {
+    return (parseFloat(trimmed.slice(0, -4)) * Math.PI) / 200;
+  }
+  return (parseFloat(trimmed) * Math.PI) / 180;
+}
+
+function labToRgb(l: number, a: number, b: number): RgbTriple | null {
+  if ([l, a, b].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+  const fy = (l + 16) / 116;
+  const fx = fy + a / 500;
+  const fz = fy - b / 200;
+
+  const epsilon = 216 / 24389;
+  const kappa = 24389 / 27;
+
+  const fx3 = fx ** 3;
+  const fy3 = fy ** 3;
+  const fz3 = fz ** 3;
+
+  const xr = fx3 > epsilon ? fx3 : (116 * fx - 16) / kappa;
+  const yr = l > kappa * epsilon ? fy3 : l / kappa;
+  const zr = fz3 > epsilon ? fz3 : (116 * fz - 16) / kappa;
+
+  const x = xr * 95.047 / 100;
+  const y = yr * 100.0 / 100;
+  const z = zr * 108.883 / 100;
+
+  const rLinear = x * 3.2406 + y * -1.5372 + z * -0.4986;
+  const gLinear = x * -0.9689 + y * 1.8758 + z * 0.0415;
+  const bLinear = x * 0.0557 + y * -0.2040 + z * 1.0570;
+
+  return [
+    linearToSrgbChannel(rLinear),
+    linearToSrgbChannel(gLinear),
+    linearToSrgbChannel(bLinear),
+  ];
+}
+
+function oklabToRgb(l: number, a: number, b: number): RgbTriple | null {
+  if ([l, a, b].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+
+  const l_ = l + 0.3963377774 * a + 0.2158037573 * b;
+  const m_ = l - 0.1055613458 * a - 0.0638541728 * b;
+  const s_ = l - 0.0894841775 * a - 1.291485548 * b;
+
+  const l3 = l_ ** 3;
+  const m3 = m_ ** 3;
+  const s3 = s_ ** 3;
+
+  const rLinear = 4.0767416621 * l3 - 3.3077115913 * m3 + 0.2309699292 * s3;
+  const gLinear = -1.2684380046 * l3 + 2.6097574011 * m3 - 0.3413193965 * s3;
+  const bLinear = -0.0041960863 * l3 - 0.7034186147 * m3 + 1.707614701 * s3;
+
+  return [
+    linearToSrgbChannel(rLinear),
+    linearToSrgbChannel(gLinear),
+    linearToSrgbChannel(bLinear),
+  ];
+}
+
+function convertLabColorValue(raw: string) {
+  const match = raw.match(/lab\((.*)\)/i);
+  if (!match) {
+    return null;
+  }
+  const [componentPart, alphaPart] = match[1].split("/");
+  const components = componentPart.trim().split(/\s+/);
+  if (components.length < 3) {
+    return null;
+  }
+  const l = parseFloat(components[0]);
+  const a = parseFloat(components[1]);
+  const b = parseFloat(components[2]);
+  const alpha = parseAlphaChannel(alphaPart);
+  const rgb = labToRgb(l, a, b);
+  if (!rgb) {
+    return null;
+  }
+  return formatRgbColor(rgb, alpha);
+}
+
+function convertOklabColorValue(raw: string) {
+  const match = raw.match(/oklab\((.*)\)/i);
+  if (!match) {
+    return null;
+  }
+  const [componentPart, alphaPart] = match[1].split("/");
+  const components = componentPart.trim().split(/\s+/);
+  if (components.length < 3) {
+    return null;
+  }
+  const lRaw = components[0];
+  const l = lRaw.endsWith("%") ? parseFloat(lRaw) / 100 : parseFloat(lRaw);
+  const a = parseFloat(components[1]);
+  const b = parseFloat(components[2]);
+  const alpha = parseAlphaChannel(alphaPart);
+  const rgb = oklabToRgb(l, a, b);
+  if (!rgb) {
+    return null;
+  }
+  return formatRgbColor(rgb, alpha);
+}
+
+function convertOklchColorValue(raw: string) {
+  const match = raw.match(/oklch\((.*)\)/i);
+  if (!match) {
+    return null;
+  }
+  const [componentPart, alphaPart] = match[1].split("/");
+  const components = componentPart.trim().split(/\s+/);
+  if (components.length < 3) {
+    return null;
+  }
+  const lRaw = components[0];
+  const l = lRaw.endsWith("%") ? parseFloat(lRaw) / 100 : parseFloat(lRaw);
+  const c = parseFloat(components[1]);
+  const angle = parseAngle(components[2]);
+  if ([l, c, angle].some((value) => Number.isNaN(value))) {
+    return null;
+  }
+  const alpha = parseAlphaChannel(alphaPart);
+  const a = c * Math.cos(angle);
+  const b = c * Math.sin(angle);
+  const rgb = oklabToRgb(l, a, b);
+  if (!rgb) {
+    return null;
+  }
+  return formatRgbColor(rgb, alpha);
+}
+
+function convertUnsupportedCssColor(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("lab(")) {
+    return convertLabColorValue(trimmed);
+  }
+  if (lower.startsWith("oklab(")) {
+    return convertOklabColorValue(trimmed);
+  }
+  if (lower.startsWith("oklch(")) {
+    return convertOklchColorValue(trimmed);
+  }
+  return null;
+}
+
+function sanitizeCloneColors(doc: Document) {
+  const view = doc.defaultView;
+  if (!view) {
+    return;
+  }
+  const root = doc.querySelector<HTMLElement>("[data-report-export-root]");
+  if (!root) {
+    return;
+  }
+  const elements: Element[] = [root, ...Array.from(root.querySelectorAll("*"))];
+  elements.forEach((element) => {
+    if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+      return;
+    }
+    const computed = view.getComputedStyle(element);
+    COLOR_PROPERTIES_FOR_EXPORT.forEach((property: ColorPropertyName) => {
+      const value = computed.getPropertyValue(property);
+      if (!value || (!value.includes("lab(") && !value.includes("oklab(") && !value.includes("oklch("))) {
+        return;
+      }
+      const converted = convertUnsupportedCssColor(value);
+      if (converted) {
+        element.style.setProperty(property, converted);
+      }
+    });
+  });
+}
+
 type WorksheetBuildResult = {
   data: (string | number)[][];
   columnWidths: Array<{ wch: number }>;
@@ -1084,7 +1336,7 @@ export default function ReportsPage() {
   const [attendancePreview, setAttendancePreview] = useState<AttendanceReportPreviewData | null>(null);
   const [scorePreview, setScorePreview] = useState<ScoreReportPreviewData | null>(null);
   const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
-  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+  const previewContainerRef = useRef<HTMLElement | null>(null);
   const hasDateRange = useMemo(() => {
     if (timeMode === "week") {
       return Boolean(activeWeek?.startDate && activeWeek?.endDate);
@@ -1220,6 +1472,7 @@ export default function ReportsPage() {
           backgroundColor: "#ffffff",
           logging: false,
           useCORS: true,
+          onclone: sanitizeCloneColors,
         });
         const dataUrl = canvas.toDataURL("image/png");
         const link = document.createElement("a");

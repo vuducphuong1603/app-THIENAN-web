@@ -123,7 +123,7 @@ const WEEKDAY_COLORS: Record<
   },
 };
 
-const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPreviewProps>(
+const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewProps>(
   (
     { data, isLoading, errorMessage, onExportImage, onExportExcel, exportDisabled, exportingMode },
     ref,
@@ -164,7 +164,11 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
     const { summary } = data;
 
     return (
-      <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <section
+        ref={ref}
+        data-report-export-root="true"
+        className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+      >
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <Image
