@@ -36,6 +36,13 @@ const TIME_MODE_LABELS: Record<TimeMode, string> = {
   date: "Theo ngày",
 };
 
+const SECTOR_ID_TO_SECTOR: Record<number, Sector> = {
+  1: "CHIÊN",
+  2: "ẤU",
+  3: "THIẾU",
+  4: "NGHĨA",
+};
+
 type ClassOption = {
   value: string;
   label: string;
@@ -113,6 +120,13 @@ function resolveSectorFromCandidates(...candidates: Array<string | null | undefi
 }
 
 function inferClassSector(cls: ClassRow): Sector | null {
+  if (typeof cls.sector_id === "number") {
+    const resolvedFromId = SECTOR_ID_TO_SECTOR[cls.sector_id];
+    if (resolvedFromId) {
+      return resolvedFromId;
+    }
+  }
+
   return (
     resolveSectorFromCandidates(
       cls.sector,
@@ -440,7 +454,7 @@ export default function ReportsPage() {
         )}
 
         <div className="flex justify-end gap-2">
-          <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Hủy</button>
+          <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900">Hủy</button>
           <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Tạo báo cáo</button>
         </div>
       </section>
@@ -453,7 +467,7 @@ export default function ReportsPage() {
             <p className="text-xs text-slate-500">Chọn thông số và nhấn xuất để tải xuống.</p>
           </div>
           <div className="flex gap-2">
-            <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Xuất ảnh PNG</button>
+            <button className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-900">Xuất ảnh PNG</button>
             <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Xuất Excel</button>
           </div>
         </div>
