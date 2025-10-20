@@ -81,6 +81,8 @@ const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
 const SUPABASE_MAX_PARALLEL_PAGES = 4;
 const SUPABASE_IN_QUERY_CHUNK = 100;
 
+let studentNamePartsColumnsAvailable: boolean | null = null;
+
 export function isIgnorableSupabaseError(error?: { code?: string }) {
   if (!error?.code) {
     return false;
@@ -283,19 +285,52 @@ export async function fetchStudentsByClass(
     return [];
   }
 
-  const { data, error } = await supabase
+  const trimmedClassId = classId.trim();
+  const baseSelect = "id, class_id, saint_name, full_name, student_code, code, status";
+  const includeNameParts = studentNamePartsColumnsAvailable !== false;
+  const selectColumns = includeNameParts ? `${baseSelect}, first_name, last_name` : baseSelect;
+
+  const baseQuery = supabase
     .from("students")
-    .select("id, class_id, saint_name, first_name, last_name, full_name, student_code, code, status")
-    .eq("class_id", classId.trim())
+    .select(selectColumns)
+    .eq("class_id", trimmedClassId)
     .neq("status", "DELETED")
     .order("full_name", { ascending: true, nullsFirst: false });
+
+  const { data, error } = await baseQuery;
 
   if (error) {
     if (isIgnorableSupabaseError(error)) {
       console.warn("Supabase students by class query fallback:", error.message);
-      return [];
+
+      if (!includeNameParts || error.code !== "42703") {
+        return [];
+      }
+
+      studentNamePartsColumnsAvailable = false;
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("students")
+        .select(baseSelect)
+        .eq("class_id", trimmedClassId)
+        .neq("status", "DELETED")
+        .order("full_name", { ascending: true, nullsFirst: false });
+
+      if (fallbackError) {
+        if (isIgnorableSupabaseError(fallbackError)) {
+          console.warn("Supabase students by class secondary fallback:", fallbackError.message);
+          return [];
+        }
+        throw new Error(fallbackError.message);
+      }
+
+      return (fallbackData as StudentBasicRow[] | null) ?? [];
     }
     throw new Error(error.message);
+  }
+
+  if (includeNameParts && studentNamePartsColumnsAvailable === null) {
+    studentNamePartsColumnsAvailable = true;
   }
 
   return (data as StudentBasicRow[] | null) ?? [];
