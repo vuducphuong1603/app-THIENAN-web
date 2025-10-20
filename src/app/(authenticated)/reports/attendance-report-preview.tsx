@@ -1,6 +1,7 @@
 
 "use client";
 
+import Image from "next/image";
 import { forwardRef, type CSSProperties } from "react";
 import clsx from "clsx";
 
@@ -164,15 +165,39 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
 
     return (
       <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Image
+              src="/tntt-logo.png"
+              alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
+              width={96}
+              height={96}
+              className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
+              priority
+            />
+            <div className="flex min-w-[200px] flex-1 flex-col items-center text-center">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-800">
+                Phong trào Thiếu Nhi Thánh Thể Việt Nam
+              </p>
+              <p className="text-xs text-slate-500">Giáo xứ Thiên Ân • Xứ đoàn Fatima</p>
+            </div>
+            <Image
+              src="/church-logo.jpg"
+              alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
+              width={96}
+              height={96}
+              className="h-20 w-20 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
+              priority
+            />
+          </div>
+          <div className="text-center sm:text-left">
             <h3 className="text-lg font-semibold text-slate-800">Xem trước báo cáo</h3>
             <p className="text-xs text-slate-500">
               Khoảng thời gian: {data.dateRangeLabel} • Lớp: {data.className} • Cập nhật:{" "}
               {data.generatedAtLabel}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               onClick={onExportImage}
@@ -226,41 +251,34 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
         >
           <div className="px-8 py-6">
             <div className="flex flex-col gap-5">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="flex h-14 w-14 items-center justify-center rounded-full"
-                    style={{
-                      border: `2px solid ${REPORT_COLORS.badgeBorder}`,
-                      backgroundColor: REPORT_COLORS.badgeBackground,
-                      color: REPORT_COLORS.badgeText,
-                      fontSize: "11px",
-                      fontWeight: 700,
-                      letterSpacing: "0.3em",
-                      textTransform: "uppercase",
-                    }}
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <Image
+                  src="/tntt-logo.png"
+                  alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
+                  width={120}
+                  height={120}
+                  className="h-24 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
+                  priority
+                />
+                <div className="flex min-w-[220px] flex-1 flex-col items-center text-center">
+                  <p
+                    className="text-xs font-semibold uppercase tracking-widest sm:text-sm"
+                    style={{ color: REPORT_COLORS.headingText }}
                   >
-                    TNTT
-                  </div>
-                  <div className="text-xs sm:text-sm" style={{ color: REPORT_COLORS.bodyText }}>
-                    <p
-                      className="text-xs font-semibold uppercase tracking-wider sm:text-[13px]"
-                      style={{ color: REPORT_COLORS.headingText }}
-                    >
-                      Phong trào Thiếu Nhi Thánh Thể Việt Nam
-                    </p>
-                    <p className="mt-1 text-xs sm:text-[13px]" style={{ color: REPORT_COLORS.mutedText }}>
-                      Giáo xứ Thiên Ân • Xứ đoàn Fatima
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right text-[11px] leading-5 sm:text-xs" style={{ color: REPORT_COLORS.bodyText }}>
-                  <p className="font-semibold uppercase tracking-wider" style={{ color: REPORT_COLORS.headingText }}>
-                    Giáo phận Phú Cường
+                    Phong trào Thiếu Nhi Thánh Thể Việt Nam
                   </p>
-                  <p>Giáo hạt Thuận An</p>
-                  <p>Giáo xứ Thiên Ân</p>
+                  <p className="mt-1 text-xs sm:text-sm" style={{ color: REPORT_COLORS.mutedText }}>
+                    Giáo xứ Thiên Ân • Xứ đoàn Fatima
+                  </p>
                 </div>
+                <Image
+                  src="/church-logo.jpg"
+                  alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
+                  width={120}
+                  height={120}
+                  className="h-24 w-24 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
+                  priority
+                />
               </div>
 
               <div className="text-center">

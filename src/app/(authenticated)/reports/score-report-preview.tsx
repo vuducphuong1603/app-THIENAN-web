@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { forwardRef } from "react";
 import clsx from "clsx";
 
@@ -119,8 +120,32 @@ const ScoreReportPreview = forwardRef<HTMLDivElement, ScoreReportPreviewProps>(
 
     return (
       <section ref={ref} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Image
+              src="/tntt-logo.png"
+              alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
+              width={96}
+              height={96}
+              className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
+              priority
+            />
+            <div className="flex min-w-[220px] flex-1 flex-col items-center text-center">
+              <p className="text-sm font-semibold uppercase tracking-wide text-slate-800">
+                Phong trào Thiếu Nhi Thánh Thể Việt Nam
+              </p>
+              <p className="text-xs text-slate-500">Giáo xứ Thiên Ân • Xứ đoàn Fatima</p>
+            </div>
+            <Image
+              src="/church-logo.jpg"
+              alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
+              width={96}
+              height={96}
+              className="h-20 w-20 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
+              priority
+            />
+          </div>
+          <div className="text-center sm:text-left">
             <h3 className="text-lg font-semibold text-slate-800">Xem trước báo cáo</h3>
             <p className="text-xs text-slate-500">
               Khoảng thời gian: {data.dateRangeLabel} • Lớp: {data.className} • Cập nhật: {data.generatedAtLabel}
@@ -129,7 +154,7 @@ const ScoreReportPreview = forwardRef<HTMLDivElement, ScoreReportPreviewProps>(
               Tổng buổi Thứ 5: {data.summary.thursdaySessions} • Chủ nhật: {data.summary.sundaySessions} • Tổng cộng: {data.summary.totalSessions}
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               type="button"
               onClick={onExportImage}
