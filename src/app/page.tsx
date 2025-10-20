@@ -5,10 +5,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 export default async function IndexPage() {
   const supabase = await createSupabaseServerClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  if (session?.user) {
+  if (error) {
+    console.warn("Failed to verify user session", error);
+  }
+
+  if (user) {
     redirect("/dashboard");
   }
 

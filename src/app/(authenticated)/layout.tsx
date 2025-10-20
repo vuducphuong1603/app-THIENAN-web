@@ -123,22 +123,27 @@ export default async function AuthenticatedLayout({
   const supabase = await createSupabaseServerClient();
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (error) {
+    console.warn("Failed to verify user session", error);
+  }
+
+  if (!user) {
     redirect("/login");
   }
 
-  const profile = await fetchProfile(session.user.id);
+  const profile = await fetchProfile(user.id);
 
   const resolvedProfile =
     profile ??
     ({
-      id: session.user.id,
-      username: session.user.email ?? "",
+      id: user.id,
+      username: user.email ?? "",
       role: "catechist",
-      fullName: session.user.user_metadata?.full_name ?? "",
+      fullName: user.user_metadata?.full_name ?? "",
     } satisfies Profile);
 
   return (

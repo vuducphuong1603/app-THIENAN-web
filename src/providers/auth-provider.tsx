@@ -58,17 +58,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const init = async () => {
       const {
-        data: { session: activeSession },
-      } = await supabase.auth.getSession();
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
 
       if (!mounted) return;
 
-      if (!activeSession?.user) {
+      if (error) {
+        console.warn("Failed to verify auth state", error);
+      }
+
+      if (!user) {
         setSession({ isLoading: false, session: null });
         return;
       }
 
-      const profile = await loadProfile(supabase, activeSession.user.id);
+      const profile = await loadProfile(supabase, user.id);
 
       if (!mounted) return;
 
@@ -76,12 +81,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession({
           isLoading: false,
           session: {
-            userId: activeSession.user.id,
+            userId: user.id,
             profile: {
-              id: activeSession.user.id,
-              username: activeSession.user.email ?? "",
+              id: user.id,
+              username: user.email ?? "",
               role: "catechist",
-              fullName: activeSession.user.user_metadata?.full_name ?? "",
+              fullName: user.user_metadata?.full_name ?? "",
             },
           },
         });
@@ -91,7 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession({
         isLoading: false,
         session: {
-          userId: activeSession.user.id,
+          userId: user.id,
           profile,
         },
       });
@@ -99,24 +104,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     init();
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async (_, updatedSession) => {
-      if (!updatedSession?.user) {
+    const { data: listener } = supabase.auth.onAuthStateChange(async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
+
+      if (!mounted) return;
+
+      if (error) {
+        console.warn("Failed to refresh auth state", error);
+      }
+
+      if (!user) {
         setSession({ isLoading: false, session: null });
         return;
       }
 
-      const profile = await loadProfile(supabase, updatedSession.user.id);
+      const profile = await loadProfile(supabase, user.id);
+
+      if (!mounted) return;
 
       setSession({
         isLoading: false,
         session: {
-          userId: updatedSession.user.id,
+          userId: user.id,
           profile:
             profile ?? {
-              id: updatedSession.user.id,
-              username: updatedSession.user.email ?? "",
+              id: user.id,
+              username: user.email ?? "",
               role: "catechist",
-              fullName: updatedSession.user.user_metadata?.full_name ?? "",
+              fullName: user.user_metadata?.full_name ?? "",
             },
         },
       });

@@ -107,10 +107,15 @@ async function resolveSupabaseClient(): Promise<ResolvedSupabaseClient> {
   const serverClient = await createSupabaseServerClient();
 
   const {
-    data: { session },
-  } = await serverClient.auth.getSession();
+    data: { user },
+    error,
+  } = await serverClient.auth.getUser();
 
-  if (!session?.user) {
+  if (error) {
+    console.warn("Failed to verify user session", error);
+  }
+
+  if (!user) {
     return { client: serverClient, sessionUserId: null, usesServiceRole: false };
   }
 
@@ -121,14 +126,14 @@ async function resolveSupabaseClient(): Promise<ResolvedSupabaseClient> {
   if (hasServiceRole) {
     try {
       const adminClient = createSupabaseAdminClient();
-      return { client: adminClient, sessionUserId: session.user.id, usesServiceRole: true };
+      return { client: adminClient, sessionUserId: user.id, usesServiceRole: true };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Failed to initialize Supabase admin client. Falling back to session client.", message);
     }
   }
 
-  return { client: serverClient, sessionUserId: session.user.id, usesServiceRole: false };
+  return { client: serverClient, sessionUserId: user.id, usesServiceRole: false };
 }
 
 async function updateStudentGrades(studentId: string, updates: UpdatePayload) {
