@@ -534,6 +534,36 @@ function buildScoreReportPreviewData({
     row.rank = rankById.get(row.studentId) ?? null;
   });
 
+  const sortedRows = rows.slice().sort((a, b) => {
+    const hasScoreA = typeof a.totalScore === "number" && Number.isFinite(a.totalScore);
+    const hasScoreB = typeof b.totalScore === "number" && Number.isFinite(b.totalScore);
+
+    if (hasScoreA && hasScoreB) {
+      const scoreDelta = (b.totalScore! - a.totalScore!);
+      if (Math.abs(scoreDelta) > Number.EPSILON) {
+        return scoreDelta;
+      }
+      const nameCompare = tieBreaker.compare(a.fullName ?? "", b.fullName ?? "");
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      return a.studentId.localeCompare(b.studentId);
+    }
+
+    if (hasScoreA) {
+      return -1;
+    }
+    if (hasScoreB) {
+      return 1;
+    }
+
+    const nameCompare = tieBreaker.compare(a.fullName ?? "", b.fullName ?? "");
+    if (nameCompare !== 0) {
+      return nameCompare;
+    }
+    return a.studentId.localeCompare(b.studentId);
+  });
+
   const resolvedStart = startDate?.trim() ? startDate : undefined;
   const resolvedEnd = endDate?.trim() ? endDate : undefined;
 
@@ -552,7 +582,7 @@ function buildScoreReportPreviewData({
     generatedAtLabel: formatGeneratedAtLabel(new Date()),
     startDate: resolvedStart,
     endDate: resolvedEnd,
-    rows,
+    rows: sortedRows,
     summary: {
       thursdaySessions: thursdayTotal,
       sundaySessions: sundayTotal,
