@@ -81,8 +81,8 @@ const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
 const SUPABASE_MAX_PARALLEL_PAGES = 4;
 const SUPABASE_IN_QUERY_CHUNK = 100;
 
-const STUDENT_TABLE_BASE_COLUMNS = ["id", "class_id", "full_name", "status"] as const;
-const STUDENT_TABLE_OPTIONAL_COLUMNS = ["saint_name", "student_code", "code", "first_name", "last_name"] as const;
+const STUDENT_TABLE_BASE_COLUMNS = ["id", "class_id", "full_name"] as const;
+const STUDENT_TABLE_OPTIONAL_COLUMNS = ["status", "saint_name", "student_code", "code", "first_name", "last_name"] as const;
 type StudentOptionalColumn = (typeof STUDENT_TABLE_OPTIONAL_COLUMNS)[number];
 
 let studentOptionalColumnsAvailability: Record<StudentOptionalColumn, boolean> | null = null;
@@ -326,12 +326,17 @@ export async function fetchStudentsByClass(
 
   while (true) {
     const selectColumns = buildStudentSelectColumns(availability);
-    const { data, error } = await supabase
+    let query = supabase
       .from("students")
       .select(selectColumns)
       .eq("class_id", trimmedClassId)
-      .neq("status", "DELETED")
       .order("full_name", { ascending: true, nullsFirst: false });
+
+    if (availability.status) {
+      query = query.neq("status", "DELETED");
+    }
+
+    const { data, error } = await query;
 
     if (!error) {
       studentOptionalColumnsAvailability = { ...availability };
