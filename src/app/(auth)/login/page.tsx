@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -75,6 +76,14 @@ export default function LoginPage() {
   return (
     <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
       <div className="mb-8 text-center">
+        <Image
+          src="/church-logo.jpg"
+          alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
+          width={144}
+          height={144}
+          className="mx-auto mb-4 h-24 w-24 rounded-full object-contain"
+          priority
+        />
         <h1 className="text-2xl font-bold text-emerald-700">Giáo Xứ Thiên Ân</h1>
         <p className="mt-2 text-sm text-slate-500">Đăng nhập hệ thống Thiếu Nhi</p>
       </div>
