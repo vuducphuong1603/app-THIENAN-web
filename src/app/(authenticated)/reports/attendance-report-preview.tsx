@@ -1,7 +1,7 @@
 
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, type CSSProperties } from "react";
 import clsx from "clsx";
 
 export type NormalizedPreviewWeekday = "thursday" | "sunday" | "other";
@@ -74,16 +74,52 @@ const SUMMARY_CARD_META = [
   },
 ];
 
-const WEEKDAY_HEADER_CLASS: Record<NormalizedPreviewWeekday, string> = {
-  thursday: "bg-sky-100 border-sky-200 text-sky-700",
-  sunday: "bg-emerald-100 border-emerald-200 text-emerald-700",
-  other: "bg-slate-100 border-slate-200 text-slate-600",
+const REPORT_COLORS = {
+  border: "#e2e8f0",
+  background: "#ffffff",
+  bodyText: "#475569",
+  headingText: "#0f172a",
+  mutedText: "#64748b",
+  highlightText: "#059669",
+  badgeText: "#b45309",
+  badgeBorder: "#f59e0b",
+  badgeBackground: "#fef3c7",
+  zebraRow: "#f8fafc",
+  absentText: "#94a3b8",
+  presentText: "#059669",
 };
 
-const WEEKDAY_CELL_CLASS: Record<NormalizedPreviewWeekday, string> = {
-  thursday: "border-sky-200",
-  sunday: "border-emerald-200",
-  other: "border-slate-200",
+const WEEKDAY_COLORS: Record<
+  NormalizedPreviewWeekday,
+  {
+    header: CSSProperties;
+    cellBorderColor: string;
+  }
+> = {
+  thursday: {
+    header: {
+      backgroundColor: "#e0f2fe",
+      borderColor: "#bae6fd",
+      color: "#0369a1",
+    },
+    cellBorderColor: "#bae6fd",
+  },
+  sunday: {
+    header: {
+      backgroundColor: "#d1fae5",
+      borderColor: "#a7f3d0",
+      color: "#047857",
+    },
+    cellBorderColor: "#a7f3d0",
+  },
+  other: {
+    header: {
+      backgroundColor: "#f1f5f9",
+      borderColor: "#e2e8f0",
+      color: "#475569",
+    },
+    cellBorderColor: "#e2e8f0",
+  },
 };
 
 const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPreviewProps>(
@@ -181,62 +217,107 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
 
         <div
           ref={ref}
-          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+          className="overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: REPORT_COLORS.border,
+            backgroundColor: REPORT_COLORS.background,
+            boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+          }}
         >
           <div className="px-8 py-6">
             <div className="flex flex-col gap-5">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400 bg-amber-100 text-[11px] font-bold uppercase tracking-widest text-amber-700 shadow-sm">
+                  <div
+                    className="flex h-14 w-14 items-center justify-center rounded-full"
+                    style={{
+                      border: `2px solid ${REPORT_COLORS.badgeBorder}`,
+                      backgroundColor: REPORT_COLORS.badgeBackground,
+                      color: REPORT_COLORS.badgeText,
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      letterSpacing: "0.3em",
+                      textTransform: "uppercase",
+                    }}
+                  >
                     TNTT
                   </div>
-                  <div className="text-xs text-slate-600 sm:text-sm">
-                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-700 sm:text-[13px]">
+                  <div className="text-xs sm:text-sm" style={{ color: REPORT_COLORS.bodyText }}>
+                    <p
+                      className="text-xs font-semibold uppercase tracking-wider sm:text-[13px]"
+                      style={{ color: REPORT_COLORS.headingText }}
+                    >
                       Phong trào Thiếu Nhi Thánh Thể Việt Nam
                     </p>
-                    <p className="mt-1 text-xs text-slate-500 sm:text-[13px]">Giáo xứ Thiên Ân • Xứ đoàn Fatima</p>
+                    <p className="mt-1 text-xs sm:text-[13px]" style={{ color: REPORT_COLORS.mutedText }}>
+                      Giáo xứ Thiên Ân • Xứ đoàn Fatima
+                    </p>
                   </div>
                 </div>
-                <div className="text-right text-[11px] leading-5 text-slate-600 sm:text-xs">
-                  <p className="font-semibold uppercase tracking-wider text-slate-700">Giáo phận Phú Cường</p>
+                <div className="text-right text-[11px] leading-5 sm:text-xs" style={{ color: REPORT_COLORS.bodyText }}>
+                  <p className="font-semibold uppercase tracking-wider" style={{ color: REPORT_COLORS.headingText }}>
+                    Giáo phận Phú Cường
+                  </p>
                   <p>Giáo hạt Thuận An</p>
                   <p>Giáo xứ Thiên Ân</p>
                 </div>
               </div>
 
               <div className="text-center">
-                <p className="text-[13px] font-semibold uppercase tracking-widest text-emerald-600">
+                <p
+                  className="text-[13px] font-semibold uppercase tracking-widest"
+                  style={{ color: REPORT_COLORS.highlightText }}
+                >
                   Sổ theo dõi - Báo cáo
                 </p>
-                <h3 className="mt-1 text-xl font-bold uppercase tracking-wide text-slate-900 sm:text-2xl">
+                <h3
+                  className="mt-1 text-xl font-bold uppercase tracking-wide sm:text-2xl"
+                  style={{ color: REPORT_COLORS.headingText }}
+                >
                   Điểm danh tham dự Thánh lễ Thứ Năm và Chúa Nhật
                 </h3>
-                <p className="mt-2 text-sm text-slate-600">
-                  Lớp: <span className="font-semibold text-slate-800">{data.className}</span> • Khoảng thời gian:{" "}
-                  <span className="font-semibold text-slate-800">{data.dateRangeLabel}</span>
+                <p className="mt-2 text-sm" style={{ color: REPORT_COLORS.bodyText }}>
+                  Lớp:{" "}
+                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                    {data.className}
+                  </span>{" "}
+                  • Khoảng thời gian:{" "}
+                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                    {data.dateRangeLabel}
+                  </span>
                 </p>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="min-w-full border border-slate-200 border-collapse text-sm text-slate-700">
+                <table
+                  className="min-w-full border border-collapse text-sm"
+                  style={{ borderColor: REPORT_COLORS.border, color: REPORT_COLORS.bodyText }}
+                >
                   <thead>
-                    <tr className="text-xs uppercase tracking-widest text-slate-600">
-                      <th className="w-14 border border-slate-200 bg-slate-100 px-3 py-3 text-center font-semibold">
+                    <tr className="text-xs uppercase tracking-widest" style={{ color: REPORT_COLORS.bodyText }}>
+                      <th
+                        className="w-14 border px-3 py-3 text-center font-semibold"
+                        style={{ backgroundColor: "#f1f5f9", borderColor: REPORT_COLORS.border }}
+                      >
                         STT
                       </th>
-                      <th className="min-w-[140px] border border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">
+                      <th
+                        className="min-w-[140px] border px-3 py-3 text-left font-semibold"
+                        style={{ backgroundColor: "#f1f5f9", borderColor: REPORT_COLORS.border }}
+                      >
                         Tên thánh
                       </th>
-                      <th className="min-w-[220px] border border-slate-200 bg-slate-100 px-3 py-3 text-left font-semibold">
+                      <th
+                        className="min-w-[220px] border px-3 py-3 text-left font-semibold"
+                        style={{ backgroundColor: "#f1f5f9", borderColor: REPORT_COLORS.border }}
+                      >
                         Họ và tên
                       </th>
                       {data.columns.map((column) => (
                         <th
                           key={column.isoDate}
-                          className={clsx(
-                            "min-w-[90px] border px-3 py-3 text-center font-semibold",
-                            WEEKDAY_HEADER_CLASS[column.normalizedWeekday],
-                          )}
+                          className="min-w-[90px] border px-3 py-3 text-center font-semibold"
+                          style={WEEKDAY_COLORS[column.normalizedWeekday].header}
                         >
                           <div className="text-sm font-bold leading-tight">{column.displayDate}</div>
                           <div className="mt-1 text-[11px] font-medium uppercase tracking-wide">
@@ -251,7 +332,8 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
                       <tr>
                         <td
                           colSpan={3 + data.columns.length}
-                          className="px-4 py-6 text-center text-sm text-slate-500"
+                          className="px-4 py-6 text-center text-sm"
+                          style={{ color: REPORT_COLORS.mutedText }}
                         >
                           Không tìm thấy dữ liệu điểm danh cho khoảng thời gian này.
                         </td>
@@ -266,14 +348,26 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
                             .trim();
 
                         return (
-                          <tr key={row.studentId} className={clsx(index % 2 === 0 ? "bg-white" : "bg-slate-50/60")}>
-                            <td className="border border-slate-200 px-3 py-2 text-center text-sm font-semibold text-slate-600">
+                          <tr
+                            key={row.studentId}
+                            style={{ backgroundColor: index % 2 === 0 ? REPORT_COLORS.background : REPORT_COLORS.zebraRow }}
+                          >
+                            <td
+                              className="border px-3 py-2 text-center text-sm font-semibold"
+                              style={{ borderColor: REPORT_COLORS.border, color: REPORT_COLORS.bodyText }}
+                            >
                               {index + 1}
                             </td>
-                            <td className="border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                            <td
+                              className="border px-3 py-2 text-sm"
+                              style={{ borderColor: REPORT_COLORS.border, color: REPORT_COLORS.bodyText }}
+                            >
                               {row.saintName || "—"}
                             </td>
-                            <td className="border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-900">
+                            <td
+                              className="border px-3 py-2 text-sm font-semibold"
+                              style={{ borderColor: REPORT_COLORS.border, color: REPORT_COLORS.headingText }}
+                            >
                               {displayName || "—"}
                             </td>
                             {data.columns.map((column) => {
@@ -282,13 +376,13 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
                               return (
                                 <td
                                   key={`${row.studentId}-${column.isoDate}`}
-                                  className={clsx(
-                                    "border px-3 py-2 text-center text-sm font-semibold uppercase tracking-widest",
-                                    WEEKDAY_CELL_CLASS[column.normalizedWeekday],
-                                    isPresent ? "text-emerald-600" : "text-slate-300",
-                                  )}
+                                  className="border px-3 py-2 text-center text-sm font-semibold uppercase tracking-widest"
+                                  style={{
+                                    borderColor: WEEKDAY_COLORS[column.normalizedWeekday].cellBorderColor,
+                                    color: isPresent ? REPORT_COLORS.presentText : REPORT_COLORS.absentText,
+                                  }}
                                 >
-                                  {isPresent ? "x" : ""}
+                                  {isPresent ? "X" : ""}
                                 </td>
                               );
                             })}
@@ -300,8 +394,11 @@ const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPrevi
                 </table>
               </div>
 
-              <div className="flex flex-wrap items-start justify-between gap-4 text-[11px] text-slate-500 sm:text-xs">
-                <div className="space-y-1">
+              <div
+                className="flex flex-wrap items-start justify-between gap-4 text-[11px] sm:text-xs"
+                style={{ color: REPORT_COLORS.mutedText }}
+              >
+                <div className="space-y-1" style={{ color: REPORT_COLORS.bodyText }}>
                   <p>X: Có mặt • Trống: Vắng hoặc chưa điểm danh.</p>
                   <p>Báo cáo được tạo lúc {data.generatedAtLabel}.</p>
                 </div>
