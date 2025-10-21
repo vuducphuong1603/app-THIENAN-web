@@ -127,6 +127,7 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
     }
 
     const { className, dateRangeLabel, generatedAtLabel } = data;
+    const isImageExport = exportingMode === "image";
 
     return (
       <section
@@ -167,9 +168,13 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
             borderColor: REPORT_COLORS.border,
             backgroundColor: REPORT_COLORS.background,
             boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+            overflow: isImageExport ? "visible" : "hidden",
           }}
         >
-          <div className="px-6 py-6 sm:px-8 sm:py-8">
+          <div
+            className="px-6 py-6 sm:px-8 sm:py-8"
+            style={isImageExport ? { width: "max-content" } : undefined}
+          >
             <div className="flex flex-col gap-6">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <Image
@@ -230,8 +235,14 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
               </div>
             </div>
 
-            <div className="mt-6 overflow-x-auto">
-              <table className="min-w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-xs md:text-sm">
+            <div
+              className="mt-6 overflow-x-auto"
+              style={isImageExport ? { overflow: "visible" } : undefined}
+            >
+              <table
+                className="min-w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-xs md:text-sm"
+                style={isImageExport ? { width: "max-content" } : undefined}
+              >
                 <thead>
                   <tr className="bg-emerald-50 text-center text-slate-700">
                     <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
