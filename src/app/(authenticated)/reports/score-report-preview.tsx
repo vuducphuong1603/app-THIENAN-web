@@ -244,47 +244,47 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                 style={isImageExport ? { width: "max-content" } : undefined}
               >
                 <thead>
-                  <tr className="bg-emerald-50 text-center text-slate-700">
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                  <tr className="text-center">
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Stt
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Trạng thái
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Tên thánh
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Họ và tên
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Lớp
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" colSpan={3}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={3}>
                       Điểm danh
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" colSpan={5}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={5}>
                       Điểm giáo lý
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Điểm tổng
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Hạng
                     </th>
-                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Kết quả
                     </th>
                   </tr>
-                  <tr className="bg-emerald-50 text-center text-slate-700">
-                    <th className="border border-slate-200 px-2 py-2">Đi lễ T5</th>
-                    <th className="border border-slate-200 px-2 py-2">Học GL</th>
-                    <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
-                    <th className="border border-slate-200 px-2 py-2">45&apos; HK1</th>
-                    <th className="border border-slate-200 px-2 py-2">Thi HK1</th>
-                    <th className="border border-slate-200 px-2 py-2">45&apos; HK2</th>
-                    <th className="border border-slate-200 px-2 py-2">Thi HK2</th>
-                    <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
+                  <tr className="text-center">
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Đi lễ T5</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Học GL</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Điểm TB</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">45&apos; HK1</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Thi HK1</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">45&apos; HK2</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Thi HK2</th>
+                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Điểm TB</th>
                   </tr>
                 </thead>
                 <tbody>
