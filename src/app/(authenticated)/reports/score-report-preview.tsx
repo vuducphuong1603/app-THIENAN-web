@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { forwardRef } from "react";
 import clsx from "clsx";
 
@@ -68,6 +69,15 @@ const STATUS_LABELS: Record<string, string> = {
   DELETED: "Đã xóa",
 };
 
+const REPORT_COLORS = {
+  border: "#e2e8f0",
+  background: "#ffffff",
+  bodyText: "#475569",
+  headingText: "#0f172a",
+  mutedText: "#64748b",
+  highlightText: "#059669",
+};
+
 function formatStatus(value?: string | null) {
   if (!value) return "";
   const normalized = value.trim().toUpperCase();
@@ -116,6 +126,8 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
       );
     }
 
+    const { className, dateRangeLabel, generatedAtLabel } = data;
+
     return (
       <section
         ref={ref}
@@ -149,118 +161,189 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
           </button>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-xs md:text-sm">
-            <thead>
-              <tr className="bg-emerald-50 text-center text-slate-700">
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Stt
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Trạng thái
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Tên thánh
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Họ và tên
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Lớp
-                </th>
-                <th className="border border-slate-200 px-2 py-3" colSpan={3}>
-                  Điểm danh
-                </th>
-                <th className="border border-slate-200 px-2 py-3" colSpan={5}>
-                  Điểm giáo lý
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Điểm tổng
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Hạng
-                </th>
-                <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
-                  Kết quả
-                </th>
-              </tr>
-              <tr className="bg-emerald-50 text-center text-slate-700">
-                <th className="border border-slate-200 px-2 py-2">Đi lễ T5</th>
-                <th className="border border-slate-200 px-2 py-2">Học GL</th>
-                <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
-                <th className="border border-slate-200 px-2 py-2">45&apos; HK1</th>
-                <th className="border border-slate-200 px-2 py-2">Thi HK1</th>
-                <th className="border border-slate-200 px-2 py-2">45&apos; HK2</th>
-                <th className="border border-slate-200 px-2 py-2">Thi HK2</th>
-                <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.length === 0 ? (
-                <tr>
-                  <td colSpan={16} className="px-4 py-6 text-center text-sm text-slate-500">
-                    Không có dữ liệu cho bảng điểm.
-                  </td>
-                </tr>
-              ) : (
-                data.rows.map((row, index) => {
-                  const zebra = index % 2 === 0 ? "bg-white" : "bg-slate-50";
-                  return (
-                    <tr key={row.studentId} className={zebra}>
-                      <td className="border border-slate-200 px-2 py-2 text-center font-medium text-slate-700">
-                        {index + 1}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatStatus(row.status)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {row.saintName ?? ""}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-left text-slate-800">
-                        {row.fullName ?? ""}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {row.className ?? data.className}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.attendance.thursdayScore)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.attendance.sundayScore)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.attendance.averageScore)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.catechism.semester145)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.catechism.semester1Exam)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.catechism.semester245)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.catechism.semester2Exam)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {formatScore(row.catechism.average)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center font-semibold text-emerald-700">
-                        {formatScore(row.totalScore)}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {row.rank ?? ""}
-                      </td>
-                      <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                        {row.result ?? ""}
+        <div
+          className="overflow-hidden rounded-2xl border"
+          style={{
+            borderColor: REPORT_COLORS.border,
+            backgroundColor: REPORT_COLORS.background,
+            boxShadow: "0 12px 28px rgba(15, 23, 42, 0.08)",
+          }}
+        >
+          <div className="px-6 py-6 sm:px-8 sm:py-8">
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <Image
+                  src="/tntt-logo.png"
+                  alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
+                  width={120}
+                  height={120}
+                  className="h-24 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
+                  priority
+                />
+                <div className="flex min-w-[220px] flex-1 flex-col items-center text-center">
+                  <p
+                    className="text-xs font-semibold uppercase tracking-widest sm:text-sm"
+                    style={{ color: REPORT_COLORS.headingText }}
+                  >
+                    Phong trào Thiếu Nhi Thánh Thể Việt Nam
+                  </p>
+                  <p className="mt-1 text-xs sm:text-sm" style={{ color: REPORT_COLORS.mutedText }}>
+                    Giáo xứ Thiên Ân • Xứ đoàn Fatima
+                  </p>
+                </div>
+                <Image
+                  src="/church-logo.jpg"
+                  alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
+                  width={120}
+                  height={120}
+                  className="h-24 w-24 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
+                  priority
+                />
+              </div>
+
+              <div className="text-center">
+                <p
+                  className="text-[13px] font-semibold uppercase tracking-widest"
+                  style={{ color: REPORT_COLORS.highlightText }}
+                >
+                  Sổ theo dõi - Báo cáo
+                </p>
+                <h3
+                  className="mt-1 text-xl font-bold uppercase tracking-wide sm:text-2xl"
+                  style={{ color: REPORT_COLORS.headingText }}
+                >
+                  Bảng điểm tổng hợp
+                </h3>
+                <p className="mt-2 text-sm" style={{ color: REPORT_COLORS.bodyText }}>
+                  Lớp:{" "}
+                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                    {className}
+                  </span>{" "}
+                  • Khoảng thời gian:{" "}
+                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                    {dateRangeLabel}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs sm:text-sm" style={{ color: REPORT_COLORS.mutedText }}>
+                  Ngày xuất báo cáo: {generatedAtLabel}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 overflow-x-auto">
+              <table className="min-w-full border-collapse overflow-hidden rounded-lg border border-slate-200 text-xs md:text-sm">
+                <thead>
+                  <tr className="bg-emerald-50 text-center text-slate-700">
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Stt
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Trạng thái
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Tên thánh
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Họ và tên
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Lớp
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" colSpan={3}>
+                      Điểm danh
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" colSpan={5}>
+                      Điểm giáo lý
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Điểm tổng
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Hạng
+                    </th>
+                    <th className="border border-slate-200 px-2 py-3" rowSpan={2}>
+                      Kết quả
+                    </th>
+                  </tr>
+                  <tr className="bg-emerald-50 text-center text-slate-700">
+                    <th className="border border-slate-200 px-2 py-2">Đi lễ T5</th>
+                    <th className="border border-slate-200 px-2 py-2">Học GL</th>
+                    <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
+                    <th className="border border-slate-200 px-2 py-2">45&apos; HK1</th>
+                    <th className="border border-slate-200 px-2 py-2">Thi HK1</th>
+                    <th className="border border-slate-200 px-2 py-2">45&apos; HK2</th>
+                    <th className="border border-slate-200 px-2 py-2">Thi HK2</th>
+                    <th className="border border-slate-200 px-2 py-2">Điểm TB</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={16} className="px-4 py-6 text-center text-sm text-slate-500">
+                        Không có dữ liệu cho bảng điểm.
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ) : (
+                    data.rows.map((row, index) => {
+                      const zebra = index % 2 === 0 ? "bg-white" : "bg-slate-50";
+                      return (
+                        <tr key={row.studentId} className={zebra}>
+                          <td className="border border-slate-200 px-2 py-2 text-center font-medium text-slate-700">
+                            {index + 1}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatStatus(row.status)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {row.saintName ?? ""}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-left text-slate-800">
+                            {row.fullName ?? ""}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {row.className ?? data.className}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.attendance.thursdayScore)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.attendance.sundayScore)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.attendance.averageScore)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.catechism.semester145)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.catechism.semester1Exam)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.catechism.semester245)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.catechism.semester2Exam)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {formatScore(row.catechism.average)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center font-semibold text-emerald-700">
+                            {formatScore(row.totalScore)}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {row.rank ?? ""}
+                          </td>
+                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
+                            {row.result ?? ""}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
     );
