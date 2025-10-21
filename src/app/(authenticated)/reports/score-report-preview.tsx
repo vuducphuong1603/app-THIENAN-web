@@ -135,7 +135,7 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
         data-report-export-root="true"
         className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2" data-export-hide-on-image="true">
           <button
             type="button"
             onClick={onExportImage}

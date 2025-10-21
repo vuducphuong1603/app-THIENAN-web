@@ -1191,6 +1191,12 @@ function sanitizeCloneColors(doc: Document) {
     return;
   }
 
+  doc
+    .querySelectorAll<HTMLElement>("[data-export-hide-on-image='true']")
+    .forEach((element) => {
+      element.style.setProperty("display", "none", "important");
+    });
+
   const elements = collectElementsForDocumentSanitization(doc);
   sanitizeColorElements(elements, view, { recordOverrides: false });
 }
