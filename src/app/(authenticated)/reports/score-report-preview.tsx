@@ -5,7 +5,6 @@ import clsx from "clsx";
 
 export type ScoreReportPreviewRow = {
   studentId: string;
-  status?: string | null;
   saintName?: string | null;
   fullName?: string | null;
   className?: string | null;
@@ -61,14 +60,6 @@ const SCORE_NUMBER_FORMATTER = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 2,
 });
 
-const STATUS_LABELS: Record<string, string> = {
-  ACTIVE: "Đang học",
-  INACTIVE: "Nghỉ",
-  GRADUATED: "Tốt nghiệp",
-  TRANSFERRED: "Chuyển lớp",
-  DELETED: "Đã xóa",
-};
-
 const REPORT_COLORS = {
   border: "#e2e8f0",
   background: "#ffffff",
@@ -77,12 +68,6 @@ const REPORT_COLORS = {
   mutedText: "#64748b",
   highlightText: "#059669",
 };
-
-function formatStatus(value?: string | null) {
-  if (!value) return "";
-  const normalized = value.trim().toUpperCase();
-  return STATUS_LABELS[normalized] ?? value;
-}
 
 function formatScore(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) {
@@ -249,9 +234,6 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                       Stt
                     </th>
                     <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
-                      Trạng thái
-                    </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
                       Tên thánh
                     </th>
                     <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
@@ -290,7 +272,7 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={16} className="px-4 py-6 text-center text-sm text-slate-500">
+                      <td colSpan={15} className="px-4 py-6 text-center text-sm text-slate-500">
                         Không có dữ liệu cho bảng điểm.
                       </td>
                     </tr>
@@ -301,9 +283,6 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                         <tr key={row.studentId} className={zebra}>
                           <td className="border border-slate-200 px-2 py-2 text-center font-medium text-slate-700">
                             {index + 1}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatStatus(row.status)}
                           </td>
                           <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
                             {row.saintName ?? ""}

@@ -495,7 +495,6 @@ function buildScoreReportPreviewData({
 
     return {
       studentId: student.id,
-      status: student.status,
       saintName: student.saint_name,
       fullName: student.full_name,
       className,
@@ -1284,7 +1283,6 @@ function buildAttendanceWorksheetData(preview: AttendanceReportPreviewData): Wor
 function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuildResult {
   const header = [
     "STT",
-    "Trạng thái",
     "Tên thánh",
     "Họ và tên",
     "Lớp",
@@ -1303,7 +1301,6 @@ function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuil
 
   const rows = preview.rows.map((row, index) => [
     index + 1,
-    row.status ?? "",
     row.saintName ?? "",
     row.fullName ?? "",
     row.className ?? preview.className,
@@ -1335,7 +1332,6 @@ function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuil
 
   const columnWidths = [
     { wch: 5 },
-    { wch: 14 },
     { wch: 18 },
     { wch: 26 },
     { wch: 12 },
