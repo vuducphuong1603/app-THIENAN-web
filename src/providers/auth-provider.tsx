@@ -152,14 +152,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       signOut: async () => {
         try {
-          await supabase.auth.signOut();
-          setSession({ isLoading: false, session: null });
-          router.push("/login");
+          const { error: clientError } = await supabase.auth.signOut({ scope: "local" });
+          if (clientError) {
+            console.warn("Client session sign-out warning:", clientError);
+          }
+
+          const response = await fetch("/api/auth/signout", {
+            method: "POST",
+            cache: "no-store",
+          });
+
+          if (!response.ok) {
+            const detail = await response.text().catch(() => "");
+            throw new Error(detail || `Server sign-out failed with status ${response.status}`);
+          }
         } catch (error) {
           console.error("Sign out error:", error);
           // Force redirect even if sign out fails
           window.location.href = "/login";
+          return;
+        } finally {
+          setSession({ isLoading: false, session: null });
         }
+
+        router.replace("/login");
+        router.refresh();
       },
       refreshProfile: async () => {
         const currentUserId = session.session?.userId;
