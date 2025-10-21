@@ -33,8 +33,15 @@ type WeekOption = {
 };
 
 type TimeMode = "week" | "date";
+type AttendanceSessionFilter = "all" | "thursday" | "sunday";
 
 const DEFAULT_WEEK_COUNT = 12;
+
+const ATTENDANCE_SESSION_OPTIONS: Array<{ value: AttendanceSessionFilter; label: string }> = [
+  { value: "all", label: "Tất cả buổi" },
+  { value: "thursday", label: "Thứ 5" },
+  { value: "sunday", label: "Chủ nhật" },
+];
 
 const VI_DAY_LABELS = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 const SECTORS: Sector[] = ["CHIÊN", "ẤU", "THIẾU", "NGHĨA"];
@@ -316,6 +323,53 @@ function buildAttendancePreviewData({
       missingCount,
       totalMarks: totalPresent,
       totalStudents: students.length,
+    },
+  };
+}
+
+function filterAttendancePreviewBySession(
+  preview: AttendanceReportPreviewData | null,
+  filter: AttendanceSessionFilter,
+): AttendanceReportPreviewData | null {
+  if (!preview) {
+    return null;
+  }
+
+  if (filter === "all") {
+    return preview;
+  }
+
+  const allowedWeekday: NormalizedPreviewWeekday = filter === "thursday" ? "thursday" : "sunday";
+  const filteredColumns = preview.columns.filter((column) => column.normalizedWeekday === allowedWeekday);
+
+  if (filteredColumns.length === preview.columns.length) {
+    return preview;
+  }
+
+  let thursdayPresent = 0;
+  let sundayPresent = 0;
+
+  filteredColumns.forEach((column) => {
+    const isoDate = column.isoDate;
+    preview.rows.forEach((row) => {
+      if (row.statuses[isoDate] === "present") {
+        if (column.normalizedWeekday === "thursday") {
+          thursdayPresent += 1;
+        } else if (column.normalizedWeekday === "sunday") {
+          sundayPresent += 1;
+        }
+      }
+    });
+  });
+
+  return {
+    ...preview,
+    columns: filteredColumns,
+    summary: {
+      ...preview.summary,
+      thursdayPresent,
+      sundayPresent,
+      totalMarks: thursdayPresent + sundayPresent,
     },
   };
 }
@@ -1595,6 +1649,7 @@ export default function ReportsPage() {
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [attendancePreview, setAttendancePreview] = useState<AttendanceReportPreviewData | null>(null);
+  const [attendanceSessionFilter, setAttendanceSessionFilter] = useState<AttendanceSessionFilter>("all");
   const [scorePreview, setScorePreview] = useState<ScoreReportPreviewData | null>(null);
   const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
   const previewContainerRef = useRef<HTMLElement | null>(null);
@@ -1604,7 +1659,11 @@ export default function ReportsPage() {
     }
     return Boolean(selectedFromDate && selectedToDate);
   }, [timeMode, activeWeek, selectedFromDate, selectedToDate]);
-  const activePreview = selectedType === "attendance" ? attendancePreview : scorePreview;
+  const attendancePreviewView = useMemo(
+    () => filterAttendancePreviewBySession(attendancePreview, attendanceSessionFilter),
+    [attendancePreview, attendanceSessionFilter],
+  );
+  const activePreview = selectedType === "attendance" ? attendancePreviewView : scorePreview;
   const isExportDisabled =
     isGeneratingReport || exportingMode !== null || !activePreview || activePreview.rows.length === 0;
 
@@ -1612,6 +1671,7 @@ export default function ReportsPage() {
     setAttendancePreview(null);
     setScorePreview(null);
     setReportError(null);
+    setAttendanceSessionFilter("all");
   }, []);
 
   const handleGenerateReport = useCallback(async () => {
@@ -1713,7 +1773,7 @@ export default function ReportsPage() {
 
   const handleExportImage = useCallback(
     async (reportType: "attendance" | "score") => {
-      const preview = reportType === "attendance" ? attendancePreview : scorePreview;
+      const preview = reportType === "attendance" ? attendancePreviewView : scorePreview;
 
       if (!preview || preview.rows.length === 0) {
         window.alert("Không có dữ liệu để xuất.");
@@ -1762,12 +1822,12 @@ export default function ReportsPage() {
         setExportingMode(null);
       }
     },
-    [attendancePreview, scorePreview],
+    [attendancePreviewView, scorePreview],
   );
 
   const handleExportExcel = useCallback(
     async (reportType: "attendance" | "score") => {
-      const preview = reportType === "attendance" ? attendancePreview : scorePreview;
+      const preview = reportType === "attendance" ? attendancePreviewView : scorePreview;
 
       if (!preview || preview.rows.length === 0) {
         window.alert("Không có dữ liệu để xuất.");
@@ -1807,7 +1867,7 @@ export default function ReportsPage() {
         setExportingMode(null);
       }
     },
-    [attendancePreview, scorePreview],
+    [attendancePreviewView, scorePreview],
   );
 
   const isGenerateDisabled =
@@ -1948,11 +2008,19 @@ export default function ReportsPage() {
           <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
             <option>Năm học 2025-2026</option>
           </select>
-          <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900">
-            <option>Tất cả buổi</option>
-            <option>Thứ 5</option>
-            <option>Chủ nhật</option>
-          </select>
+          {selectedType === "attendance" && (
+            <select
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+              value={attendanceSessionFilter}
+              onChange={(event) => setAttendanceSessionFilter(event.target.value as AttendanceSessionFilter)}
+            >
+              {ATTENDANCE_SESSION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {selectedType === "score" && (
@@ -2004,7 +2072,7 @@ export default function ReportsPage() {
       {selectedType === "attendance" ? (
         <AttendanceReportPreview
           ref={previewContainerRef}
-          data={attendancePreview}
+          data={attendancePreviewView}
           isLoading={isGeneratingReport}
           errorMessage={reportError}
           exportDisabled={isExportDisabled}
