@@ -22,7 +22,11 @@ import AttendanceReportPreview, {
   type AttendancePreviewRow,
   type NormalizedPreviewWeekday,
 } from "./attendance-report-preview";
-import ScoreReportPreview, { type ScoreReportPreviewData } from "./score-report-preview";
+import ScoreReportPreview, {
+  SCORE_COLUMN_DEFINITIONS,
+  type ScoreColumnId,
+  type ScoreReportPreviewData,
+} from "./score-report-preview";
 
 type WeekOption = {
   value: string;
@@ -69,6 +73,10 @@ type ClassOption = {
   value: string;
   label: string;
 };
+
+const DEFAULT_SCORE_COLUMN_IDS: ScoreColumnId[] = SCORE_COLUMN_DEFINITIONS.map(
+  (definition) => definition.id,
+);
 
 function getToggleButtonClasses(isActive: boolean, isDisabled?: boolean) {
   const base = "rounded-full border px-3 py-1 text-xs font-medium transition";
@@ -1334,42 +1342,38 @@ function buildAttendanceWorksheetData(preview: AttendanceReportPreviewData): Wor
   };
 }
 
-function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuildResult {
+function buildScoreWorksheetData(
+  preview: ScoreReportPreviewData,
+  visibleColumns?: ScoreColumnId[],
+): WorksheetBuildResult {
+  const resolvedColumns = Array.isArray(visibleColumns) ? visibleColumns : DEFAULT_SCORE_COLUMN_IDS;
+  const visibleSet = new Set<ScoreColumnId>(resolvedColumns);
+  const orderedVisibleColumns = SCORE_COLUMN_DEFINITIONS.filter((definition) =>
+    visibleSet.has(definition.id),
+  );
+
   const header = [
     "STT",
     "Tên thánh",
     "Họ và tên",
     "Lớp",
-    "Đi lễ T5",
-    "Học GL",
-    "Điểm danh TB",
-    "45' HK1",
-    "Thi HK1",
-    "45' HK2",
-    "Thi HK2",
-    "Điểm GL TB",
-    "Điểm tổng",
+    ...orderedVisibleColumns.map((column) => column.headerLabel),
     "Hạng",
     "Kết quả",
   ];
 
-  const rows = preview.rows.map((row, index) => [
-    index + 1,
-    row.saintName ?? "",
-    row.fullName ?? "",
-    row.className ?? preview.className,
-    row.attendance.thursdayScore ?? "",
-    row.attendance.sundayScore ?? "",
-    row.attendance.averageScore ?? "",
-    row.catechism.semester145 ?? "",
-    row.catechism.semester1Exam ?? "",
-    row.catechism.semester245 ?? "",
-    row.catechism.semester2Exam ?? "",
-    row.catechism.average ?? "",
-    row.totalScore ?? "",
-    row.rank ?? "",
-    row.result ?? "",
-  ]);
+  const rows = preview.rows.map((row, index) => {
+    const dynamicValues = orderedVisibleColumns.map((column) => column.getRawValue(row) ?? "");
+    return [
+      index + 1,
+      row.saintName ?? "",
+      row.fullName ?? "",
+      row.className ?? preview.className,
+      ...dynamicValues,
+      row.rank ?? "",
+      row.result ?? "",
+    ];
+  });
 
   const data: (string | number)[][] = [
     ["Báo cáo điểm số - Lớp " + preview.className],
@@ -1389,15 +1393,7 @@ function buildScoreWorksheetData(preview: ScoreReportPreviewData): WorksheetBuil
     { wch: 18 },
     { wch: 26 },
     { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 12 },
-    { wch: 14 },
-    { wch: 14 },
+    ...orderedVisibleColumns.map((column) => ({ wch: column.worksheetWidth })),
     { wch: 8 },
     { wch: 12 },
   ];
@@ -1650,6 +1646,9 @@ export default function ReportsPage() {
   const [reportError, setReportError] = useState<string | null>(null);
   const [attendancePreview, setAttendancePreview] = useState<AttendanceReportPreviewData | null>(null);
   const [attendanceSessionFilter, setAttendanceSessionFilter] = useState<AttendanceSessionFilter>("all");
+  const [selectedScoreColumns, setSelectedScoreColumns] = useState<ScoreColumnId[]>(() => [
+    ...DEFAULT_SCORE_COLUMN_IDS,
+  ]);
   const [scorePreview, setScorePreview] = useState<ScoreReportPreviewData | null>(null);
   const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
   const previewContainerRef = useRef<HTMLElement | null>(null);
@@ -1672,6 +1671,7 @@ export default function ReportsPage() {
     setScorePreview(null);
     setReportError(null);
     setAttendanceSessionFilter("all");
+    setSelectedScoreColumns([...DEFAULT_SCORE_COLUMN_IDS]);
   }, []);
 
   const handleGenerateReport = useCallback(async () => {
@@ -1840,7 +1840,7 @@ export default function ReportsPage() {
         const worksheetData =
           reportType === "attendance"
             ? buildAttendanceWorksheetData(preview as AttendanceReportPreviewData)
-            : buildScoreWorksheetData(preview as ScoreReportPreviewData);
+            : buildScoreWorksheetData(preview as ScoreReportPreviewData, selectedScoreColumns);
         const worksheet = XLSX.utils.aoa_to_sheet(worksheetData.data);
         worksheet["!cols"] = worksheetData.columnWidths;
         const workbook = XLSX.utils.book_new();
@@ -1867,7 +1867,7 @@ export default function ReportsPage() {
         setExportingMode(null);
       }
     },
-    [attendancePreviewView, scorePreview],
+    [attendancePreviewView, scorePreview, selectedScoreColumns],
   );
 
   const isGenerateDisabled =
@@ -2027,21 +2027,33 @@ export default function ReportsPage() {
           <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-600">
             <p className="font-semibold text-slate-700">Chọn cột điểm số để xuất</p>
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
-              {[
-                "Đi lễ Thứ 5",
-                "Thi HK1",
-                "Học giáo lý",
-                "45' HK2",
-                "Điểm trung bình",
-                "Thi HK2",
-                "45' HK1",
-                "Điểm tổng",
-              ].map((label) => (
-                <label key={label} className="flex items-center gap-2">
-                  <input type="checkbox" className="h-4 w-4" defaultChecked />
-                  {label}
-                </label>
-              ))}
+              {SCORE_COLUMN_DEFINITIONS.map((column) => {
+                const isChecked = selectedScoreColumns.includes(column.id);
+                return (
+                  <label key={column.id} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={isChecked}
+                      onChange={(event) => {
+                        const { checked } = event.target;
+                        setSelectedScoreColumns((prev) => {
+                          if (checked) {
+                            if (prev.includes(column.id)) {
+                              return prev;
+                            }
+                            const nextSet = new Set<ScoreColumnId>(prev);
+                            nextSet.add(column.id);
+                            return DEFAULT_SCORE_COLUMN_IDS.filter((id) => nextSet.has(id));
+                          }
+                          return prev.filter((id) => id !== column.id);
+                        });
+                      }}
+                    />
+                    {column.selectionLabel}
+                  </label>
+                );
+              })}
             </div>
           </div>
         )}
@@ -2088,6 +2100,7 @@ export default function ReportsPage() {
           errorMessage={reportError}
           exportDisabled={isExportDisabled}
           exportingMode={exportingMode}
+          visibleColumns={selectedScoreColumns}
           onExportImage={() => handleExportImage("score")}
           onExportExcel={() => handleExportExcel("score")}
         />

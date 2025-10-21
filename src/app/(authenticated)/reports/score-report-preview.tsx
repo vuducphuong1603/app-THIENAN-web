@@ -53,6 +53,7 @@ export interface ScoreReportPreviewProps {
   onExportExcel?: () => void;
   exportDisabled?: boolean;
   exportingMode?: "image" | "excel" | null;
+  visibleColumns?: ScoreColumnId[];
 }
 
 const SCORE_NUMBER_FORMATTER = new Intl.NumberFormat("vi-VN", {
@@ -76,8 +77,133 @@ function formatScore(value: number | null | undefined) {
   return SCORE_NUMBER_FORMATTER.format(value);
 }
 
+export type ScoreColumnId =
+  | "attendance.thursdayScore"
+  | "attendance.sundayScore"
+  | "attendance.averageScore"
+  | "catechism.semester145"
+  | "catechism.semester1Exam"
+  | "catechism.semester245"
+  | "catechism.semester2Exam"
+  | "catechism.average"
+  | "totalScore";
+
+type ScoreColumnGroup = "attendance" | "catechism" | "summary";
+
+export type ScoreColumnDefinition = {
+  id: ScoreColumnId;
+  group: ScoreColumnGroup;
+  headerLabel: string;
+  selectionLabel: string;
+  worksheetWidth: number;
+  cellClassName?: string;
+  getDisplayValue: (row: ScoreReportPreviewRow) => string;
+  getRawValue: (row: ScoreReportPreviewRow) => number | string | null;
+};
+
+const BASE_DYNAMIC_CELL_CLASSES =
+  "border border-slate-200 px-2 py-2 text-center text-slate-700";
+const BASE_DYNAMIC_HEADER_CLASSES = "border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700";
+
+export const SCORE_COLUMN_DEFINITIONS: ScoreColumnDefinition[] = [
+  {
+    id: "attendance.thursdayScore",
+    group: "attendance",
+    headerLabel: "Đi lễ T5",
+    selectionLabel: "Đi lễ Thứ 5",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.attendance.thursdayScore),
+    getRawValue: (row) => row.attendance.thursdayScore ?? null,
+  },
+  {
+    id: "attendance.sundayScore",
+    group: "attendance",
+    headerLabel: "Học GL",
+    selectionLabel: "Học giáo lý",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.attendance.sundayScore),
+    getRawValue: (row) => row.attendance.sundayScore ?? null,
+  },
+  {
+    id: "attendance.averageScore",
+    group: "attendance",
+    headerLabel: "Điểm TB",
+    selectionLabel: "Điểm danh TB",
+    worksheetWidth: 14,
+    getDisplayValue: (row) => formatScore(row.attendance.averageScore),
+    getRawValue: (row) => row.attendance.averageScore ?? null,
+  },
+  {
+    id: "catechism.semester145",
+    group: "catechism",
+    headerLabel: "45' HK1",
+    selectionLabel: "45' HK1",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.catechism.semester145),
+    getRawValue: (row) => row.catechism.semester145 ?? null,
+  },
+  {
+    id: "catechism.semester1Exam",
+    group: "catechism",
+    headerLabel: "Thi HK1",
+    selectionLabel: "Thi HK1",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.catechism.semester1Exam),
+    getRawValue: (row) => row.catechism.semester1Exam ?? null,
+  },
+  {
+    id: "catechism.semester245",
+    group: "catechism",
+    headerLabel: "45' HK2",
+    selectionLabel: "45' HK2",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.catechism.semester245),
+    getRawValue: (row) => row.catechism.semester245 ?? null,
+  },
+  {
+    id: "catechism.semester2Exam",
+    group: "catechism",
+    headerLabel: "Thi HK2",
+    selectionLabel: "Thi HK2",
+    worksheetWidth: 12,
+    getDisplayValue: (row) => formatScore(row.catechism.semester2Exam),
+    getRawValue: (row) => row.catechism.semester2Exam ?? null,
+  },
+  {
+    id: "catechism.average",
+    group: "catechism",
+    headerLabel: "Điểm TB",
+    selectionLabel: "Điểm GL TB",
+    worksheetWidth: 14,
+    getDisplayValue: (row) => formatScore(row.catechism.average),
+    getRawValue: (row) => row.catechism.average ?? null,
+  },
+  {
+    id: "totalScore",
+    group: "summary",
+    headerLabel: "Điểm tổng",
+    selectionLabel: "Điểm tổng",
+    worksheetWidth: 14,
+    cellClassName: "font-semibold text-emerald-700",
+    getDisplayValue: (row) => formatScore(row.totalScore),
+    getRawValue: (row) => row.totalScore ?? null,
+  },
+];
+
 const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
-  ({ data, isLoading, errorMessage, onExportExcel, onExportImage, exportDisabled, exportingMode }, ref) => {
+  (
+    {
+      data,
+      isLoading,
+      errorMessage,
+      onExportExcel,
+      onExportImage,
+      exportDisabled,
+      exportingMode,
+      visibleColumns,
+    },
+    ref,
+  ) => {
     const isExporting = exportingMode != null;
     const isImageDisabled = exportDisabled || isExporting;
     const isExcelDisabled = exportDisabled || isExporting;
@@ -113,6 +239,26 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
 
     const { className, dateRangeLabel, generatedAtLabel } = data;
     const isImageExport = exportingMode === "image";
+    const resolvedVisibleColumns = Array.isArray(visibleColumns)
+      ? SCORE_COLUMN_DEFINITIONS.filter((definition) => visibleColumns.includes(definition.id))
+      : SCORE_COLUMN_DEFINITIONS;
+    const visibleColumnSet = new Set(resolvedVisibleColumns.map((definition) => definition.id));
+    const visibleAttendanceColumns = SCORE_COLUMN_DEFINITIONS.filter(
+      (definition) => definition.group === "attendance" && visibleColumnSet.has(definition.id),
+    );
+    const visibleCatechismColumns = SCORE_COLUMN_DEFINITIONS.filter(
+      (definition) => definition.group === "catechism" && visibleColumnSet.has(definition.id),
+    );
+    const visibleSummaryColumns = SCORE_COLUMN_DEFINITIONS.filter(
+      (definition) => definition.group === "summary" && visibleColumnSet.has(definition.id),
+    );
+    const hasGroupedColumns = visibleAttendanceColumns.length > 0 || visibleCatechismColumns.length > 0;
+    const headerRowSpan = hasGroupedColumns ? 2 : 1;
+    const baseColumnCount = 4; // STT, Tên thánh, Họ và tên, Lớp
+    const trailingColumnCount = 2; // Hạng, Kết quả
+    const totalDynamicColumnCount =
+      visibleAttendanceColumns.length + visibleCatechismColumns.length + visibleSummaryColumns.length;
+    const totalColumnCount = baseColumnCount + trailingColumnCount + totalDynamicColumnCount;
 
     return (
       <section
@@ -238,49 +384,81 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
               >
                 <thead>
                   <tr className="text-center">
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Stt
                     </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Tên thánh
                     </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Họ và tên
                     </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Lớp
                     </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={3}>
-                      Điểm danh
-                    </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={5}>
-                      Điểm giáo lý
-                    </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
-                      Điểm tổng
-                    </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    {visibleAttendanceColumns.length > 0 && (
+                      <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={visibleAttendanceColumns.length}>
+                        Điểm danh
+                      </th>
+                    )}
+                    {visibleCatechismColumns.length > 0 && (
+                      <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" colSpan={visibleCatechismColumns.length}>
+                        Điểm giáo lý
+                      </th>
+                    )}
+                    {visibleSummaryColumns.map((column) => (
+                      <th
+                        key={column.id}
+                        className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                        rowSpan={headerRowSpan}
+                      >
+                        {column.headerLabel}
+                      </th>
+                    ))}
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Hạng
                     </th>
-                    <th className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700" rowSpan={2}>
+                    <th
+                      className="border border-slate-200 px-2 py-3 bg-emerald-50 text-slate-700"
+                      rowSpan={headerRowSpan}
+                    >
                       Kết quả
                     </th>
                   </tr>
-                  <tr className="text-center">
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Đi lễ T5</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Học GL</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Điểm TB</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">45&apos; HK1</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Thi HK1</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">45&apos; HK2</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Thi HK2</th>
-                    <th className="border border-slate-200 px-2 py-2 bg-emerald-50 text-slate-700">Điểm TB</th>
-                  </tr>
+                  {hasGroupedColumns && (
+                    <tr className="text-center">
+                      {visibleAttendanceColumns.map((column) => (
+                        <th key={column.id} className={BASE_DYNAMIC_HEADER_CLASSES}>
+                          {column.headerLabel}
+                        </th>
+                      ))}
+                      {visibleCatechismColumns.map((column) => (
+                        <th key={column.id} className={BASE_DYNAMIC_HEADER_CLASSES}>
+                          {column.headerLabel}
+                        </th>
+                      ))}
+                    </tr>
+                  )}
                 </thead>
                 <tbody>
                   {data.rows.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="px-4 py-6 text-center text-sm text-slate-500">
+                      <td colSpan={totalColumnCount} className="px-4 py-6 text-center text-sm text-slate-500">
                         Không có dữ liệu cho bảng điểm.
                       </td>
                     </tr>
@@ -301,33 +479,21 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                           <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
                             {row.className ?? data.className}
                           </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.attendance.thursdayScore)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.attendance.sundayScore)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.attendance.averageScore)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.catechism.semester145)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.catechism.semester1Exam)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.catechism.semester245)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.catechism.semester2Exam)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
-                            {formatScore(row.catechism.average)}
-                          </td>
-                          <td className="border border-slate-200 px-2 py-2 text-center font-semibold text-emerald-700">
-                            {formatScore(row.totalScore)}
-                          </td>
+                          {visibleAttendanceColumns.map((column) => (
+                            <td key={column.id} className={clsx(BASE_DYNAMIC_CELL_CLASSES, column.cellClassName)}>
+                              {column.getDisplayValue(row)}
+                            </td>
+                          ))}
+                          {visibleCatechismColumns.map((column) => (
+                            <td key={column.id} className={clsx(BASE_DYNAMIC_CELL_CLASSES, column.cellClassName)}>
+                              {column.getDisplayValue(row)}
+                            </td>
+                          ))}
+                          {visibleSummaryColumns.map((column) => (
+                            <td key={column.id} className={clsx(BASE_DYNAMIC_CELL_CLASSES, column.cellClassName)}>
+                              {column.getDisplayValue(row)}
+                            </td>
+                          ))}
                           <td className="border border-slate-200 px-2 py-2 text-center text-slate-700">
                             {row.rank ?? ""}
                           </td>
