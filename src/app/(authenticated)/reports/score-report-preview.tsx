@@ -195,6 +195,7 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                 <p
                   className="text-[13px] font-semibold uppercase tracking-widest"
                   style={{ color: REPORT_COLORS.highlightText }}
+                  data-export-hide-on-image="true"
                 >
                   Sổ theo dõi - Báo cáo
                 </p>
@@ -208,13 +209,20 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                   Lớp:{" "}
                   <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
                     {className}
-                  </span>{" "}
-                  • Khoảng thời gian:{" "}
-                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
-                    {dateRangeLabel}
+                  </span>
+                  <span data-export-hide-on-image="true">
+                    {" "}
+                    • Khoảng thời gian:{" "}
+                    <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                      {dateRangeLabel}
+                    </span>
                   </span>
                 </p>
-                <p className="mt-1 text-xs sm:text-sm" style={{ color: REPORT_COLORS.mutedText }}>
+                <p
+                  className="mt-1 text-xs sm:text-sm"
+                  style={{ color: REPORT_COLORS.mutedText }}
+                  data-export-hide-on-image="true"
+                >
                   Ngày xuất báo cáo: {generatedAtLabel}
                 </p>
               </div>

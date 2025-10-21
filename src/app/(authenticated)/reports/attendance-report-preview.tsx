@@ -256,6 +256,7 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
                 <p
                   className="text-[13px] font-semibold uppercase tracking-widest"
                   style={{ color: REPORT_COLORS.highlightText }}
+                  data-export-hide-on-image="true"
                 >
                   Sổ theo dõi - Báo cáo
                 </p>
@@ -269,10 +270,13 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
                   Lớp:{" "}
                   <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
                     {data.className}
-                  </span>{" "}
-                  • Khoảng thời gian:{" "}
-                  <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
-                    {data.dateRangeLabel}
+                  </span>
+                  <span data-export-hide-on-image="true">
+                    {" "}
+                    • Khoảng thời gian:{" "}
+                    <span className="font-semibold" style={{ color: REPORT_COLORS.headingText }}>
+                      {data.dateRangeLabel}
+                    </span>
                   </span>
                 </p>
               </div>
@@ -389,7 +393,7 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
               >
                 <div className="space-y-1" style={{ color: REPORT_COLORS.bodyText }}>
                   <p>X: Có mặt • Trống: Vắng hoặc chưa điểm danh.</p>
-                  <p>Báo cáo được tạo lúc {data.generatedAtLabel}.</p>
+                  <p data-export-hide-on-image="true">Báo cáo được tạo lúc {data.generatedAtLabel}.</p>
                 </div>
                 <div className="text-right leading-6">
                   <p>Người lập biểu: ___________________________</p>
