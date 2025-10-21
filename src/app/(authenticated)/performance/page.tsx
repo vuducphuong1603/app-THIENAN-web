@@ -1,4 +1,5 @@
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { fetchClasses, fetchSectors } from "@/lib/queries/supabase";
 import type { ClassRow, SectorRow } from "@/lib/queries/supabase";
 import PerformanceContent from "./performance-content";
 import { MAX_CHART_POINTS, SECTOR_KEYS, SECTOR_METADATA, WEEKDAY_METADATA } from "./constants";
@@ -55,23 +56,22 @@ const fullDateFormatter = new Intl.DateTimeFormat("vi-VN", {
 export default async function PerformancePage() {
   const supabase = await createSupabaseServerClient();
 
-  const [classesResult, sectorsResult] = await Promise.all([
-    supabase.from("classes").select("id, name, sector_id, sector, sector_code, sector_name, branch, branch_name"),
-    supabase.from("sectors").select("id, name, code"),
-  ]);
+  const [classesResult, sectorsResult] = (await Promise.allSettled([
+    fetchClasses(supabase),
+    fetchSectors(supabase),
+  ])) as [
+    PromiseSettledResult<ClassRow[]>,
+    PromiseSettledResult<SectorRow[]>,
+  ];
 
-  const sectorRows = sectorsResult.error
-    ? []
-    : ((sectorsResult.data as SectorRow[] | null | undefined) ?? []);
-  if (sectorsResult.error) {
-    console.warn("Performance page sectors query fallback:", sectorsResult.error.message ?? sectorsResult.error);
+  const sectorRows = sectorsResult.status === "fulfilled" ? sectorsResult.value : [];
+  if (sectorsResult.status === "rejected") {
+    console.warn("Performance page sectors query fallback:", sectorsResult.reason);
   }
 
-  const classRows = classesResult.error
-    ? []
-    : ((classesResult.data as ClassRow[] | null | undefined) ?? []);
-  if (classesResult.error) {
-    console.warn("Performance page classes query fallback:", classesResult.error.message ?? classesResult.error);
+  const classRows = classesResult.status === "fulfilled" ? classesResult.value : [];
+  if (classesResult.status === "rejected") {
+    console.warn("Performance page classes query fallback:", classesResult.reason);
   }
 
   const sectorKeyById = buildSectorKeyById(sectorRows);
