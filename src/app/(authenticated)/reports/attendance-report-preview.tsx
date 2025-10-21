@@ -169,64 +169,31 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
         data-report-export-root="true"
         className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <Image
-              src="/tntt-logo.png"
-              alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
-              width={96}
-              height={96}
-              className="h-20 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
-              priority
-            />
-            <div className="flex min-w-[200px] flex-1 flex-col items-center text-center">
-              <p className="text-sm font-semibold uppercase tracking-wide text-slate-800">
-                Phong trào Thiếu Nhi Thánh Thể Việt Nam
-              </p>
-              <p className="text-xs text-slate-500">Giáo xứ Thiên Ân • Xứ đoàn Fatima</p>
-            </div>
-            <Image
-              src="/church-logo.jpg"
-              alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
-              width={96}
-              height={96}
-              className="h-20 w-20 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
-              priority
-            />
-          </div>
-          <div className="text-center sm:text-left">
-            <h3 className="text-lg font-semibold text-slate-800">Xem trước báo cáo</h3>
-            <p className="text-xs text-slate-500">
-              Khoảng thời gian: {data.dateRangeLabel} • Lớp: {data.className} • Cập nhật:{" "}
-              {data.generatedAtLabel}
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            <button
-              type="button"
-              onClick={onExportImage}
-              disabled={isImageDisabled}
-              className={clsx(
-                "rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition",
-                isImageDisabled
-                  ? "cursor-not-allowed opacity-60"
-                  : "hover:border-slate-400 hover:text-slate-900",
-              )}
-            >
-              {imageButtonLabel}
-            </button>
-            <button
-              type="button"
-              onClick={onExportExcel}
-              disabled={isExcelDisabled}
-              className={clsx(
-                "rounded-lg px-4 py-2 text-sm font-semibold text-white transition",
-                isExcelDisabled ? "bg-emerald-200 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700",
-              )}
-            >
-              {excelButtonLabel}
-            </button>
-          </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <button
+            type="button"
+            onClick={onExportImage}
+            disabled={isImageDisabled}
+            className={clsx(
+              "rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition",
+              isImageDisabled
+                ? "cursor-not-allowed opacity-60"
+                : "hover:border-slate-400 hover:text-slate-900",
+            )}
+          >
+            {imageButtonLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onExportExcel}
+            disabled={isExcelDisabled}
+            className={clsx(
+              "rounded-lg px-4 py-2 text-sm font-semibold text-white transition",
+              isExcelDisabled ? "bg-emerald-200 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700",
+            )}
+          >
+            {excelButtonLabel}
+          </button>
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">

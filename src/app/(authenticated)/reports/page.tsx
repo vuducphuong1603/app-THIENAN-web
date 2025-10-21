@@ -716,10 +716,19 @@ const COLOR_PROPERTIES_FOR_EXPORT = [
   "outline-color",
 ] as const;
 
-const UNSUPPORTED_COLOR_FUNCTION_PREFIXES = ["oklch(", "oklab(", "lab("] as const;
+const UNSUPPORTED_COLOR_FUNCTION_PREFIXES = ["oklch(", "oklab(", "lab(", "color("] as const;
+const COLOR_FUNCTION_UNSUPPORTED_REGEX = /color\(\s*(?:oklch|oklab|lab)\b/i;
 
 type ColorPropertyName = (typeof COLOR_PROPERTIES_FOR_EXPORT)[number];
 type RgbTriple = [number, number, number];
+
+type ColorOverrideRecord = {
+  element: HTMLElement | SVGElement;
+  property: string;
+  previousValue: string;
+  previousPriority: string;
+  hadInlineValue: boolean;
+};
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -914,6 +923,58 @@ function convertOklchColorValue(raw: string) {
   return formatRgbColor(rgb, alpha);
 }
 
+function convertColorFunctionValue(raw: string) {
+  const match = raw.match(/color\((.*)\)/i);
+  if (!match) {
+    return null;
+  }
+  const inner = match[1].trim();
+  if (!inner) {
+    return null;
+  }
+  let spaceEnd = 0;
+  while (spaceEnd < inner.length) {
+    const char = inner[spaceEnd];
+    if (char === " " || char === "\t" || char === "\n" || char === "\r" || char === "/") {
+      break;
+    }
+    spaceEnd += 1;
+  }
+  if (spaceEnd === 0) {
+    return null;
+  }
+  const space = inner.slice(0, spaceEnd).toLowerCase();
+  const remainder = inner.slice(spaceEnd).trim();
+  if (!remainder) {
+    return null;
+  }
+  let componentPart = remainder;
+  let alphaPart: string | undefined;
+  const slashIndex = remainder.indexOf("/");
+  if (slashIndex !== -1) {
+    componentPart = remainder.slice(0, slashIndex).trim();
+    alphaPart = remainder.slice(slashIndex + 1).trim();
+  }
+  if (!componentPart) {
+    return null;
+  }
+  const normalizedAlpha = alphaPart ? ` / ${alphaPart}` : "";
+  const normalizedComponent = componentPart.trim();
+  if (!normalizedComponent) {
+    return null;
+  }
+  if (space === "lab") {
+    return convertLabColorValue(`lab(${normalizedComponent}${normalizedAlpha})`);
+  }
+  if (space === "oklab") {
+    return convertOklabColorValue(`oklab(${normalizedComponent}${normalizedAlpha})`);
+  }
+  if (space === "oklch") {
+    return convertOklchColorValue(`oklch(${normalizedComponent}${normalizedAlpha})`);
+  }
+  return null;
+}
+
 function convertUnsupportedCssColor(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -929,6 +990,9 @@ function convertUnsupportedCssColor(raw: string) {
   if (lower.startsWith("oklch(")) {
     return convertOklchColorValue(trimmed);
   }
+  if (lower.startsWith("color(")) {
+    return convertColorFunctionValue(trimmed);
+  }
   return null;
 }
 
@@ -937,7 +1001,18 @@ function containsUnsupportedColorFunction(value: string) {
     return false;
   }
   const lower = value.toLowerCase();
-  return UNSUPPORTED_COLOR_FUNCTION_PREFIXES.some((prefix) => lower.includes(prefix));
+  for (const prefix of UNSUPPORTED_COLOR_FUNCTION_PREFIXES) {
+    if (prefix === "color(") {
+      if (COLOR_FUNCTION_UNSUPPORTED_REGEX.test(lower)) {
+        return true;
+      }
+      continue;
+    }
+    if (lower.includes(prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function findColorFunctionEnd(value: string, openIndex: number) {
@@ -1001,16 +1076,59 @@ function replaceUnsupportedColorFunctions(value: string) {
   return hasChanges ? result : value;
 }
 
-function sanitizeCloneColors(doc: Document) {
-  const view = doc.defaultView;
-  if (!view) {
-    return;
-  }
+function collectElementsForDocumentSanitization(doc: Document) {
+  const elements: Element[] = [];
+  const seen = new Set<Element>();
+  const pushUnique = (element: Element | null) => {
+    if (element && !seen.has(element)) {
+      seen.add(element);
+      elements.push(element);
+    }
+  };
+
+  pushUnique(doc.documentElement);
+  pushUnique(doc.body);
   const root = doc.querySelector<HTMLElement>("[data-report-export-root]");
-  if (!root) {
-    return;
+  if (root) {
+    pushUnique(root);
+    root.querySelectorAll("*").forEach((element) => {
+      pushUnique(element);
+    });
   }
-  const elements: Element[] = [root, ...Array.from(root.querySelectorAll("*"))];
+  if (doc.body) {
+    doc.body.querySelectorAll("*").forEach((element) => {
+      pushUnique(element);
+    });
+  }
+
+  return elements;
+}
+
+function collectElementsForSubtreeSanitization(root: HTMLElement) {
+  const elements: Element[] = [];
+  const seen = new Set<Element>();
+  const pushUnique = (element: Element | null) => {
+    if (element && !seen.has(element)) {
+      seen.add(element);
+      elements.push(element);
+    }
+  };
+
+  pushUnique(root);
+  root.querySelectorAll("*").forEach((element) => {
+    pushUnique(element);
+  });
+
+  return elements;
+}
+
+function sanitizeColorElements(
+  elements: Element[],
+  view: Window,
+  { recordOverrides }: { recordOverrides: boolean },
+) {
+  const overrides: ColorOverrideRecord[] = [];
+
   elements.forEach((element) => {
     if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
       return;
@@ -1028,8 +1146,31 @@ function sanitizeCloneColors(doc: Document) {
         return;
       }
       const sanitized = replaceUnsupportedColorFunctions(value);
-      if (sanitized !== value) {
-        element.style.setProperty(property, sanitized);
+      if (sanitized === value) {
+        return;
+      }
+
+      const style = element.style;
+      let previousValue = "";
+      let previousPriority = "";
+      let hadInlineValue = false;
+
+      if (recordOverrides) {
+        previousValue = style.getPropertyValue(property);
+        previousPriority = style.getPropertyPriority(property);
+        hadInlineValue = Boolean(previousValue) || Boolean(previousPriority);
+      }
+
+      style.setProperty(property, sanitized, "important");
+
+      if (recordOverrides) {
+        overrides.push({
+          element,
+          property,
+          previousValue,
+          previousPriority,
+          hadInlineValue,
+        });
       }
     };
 
@@ -1040,6 +1181,40 @@ function sanitizeCloneColors(doc: Document) {
       processProperty(computed.item(index));
     }
   });
+
+  return overrides;
+}
+
+function sanitizeCloneColors(doc: Document) {
+  const view = doc.defaultView;
+  if (!view) {
+    return;
+  }
+
+  const elements = collectElementsForDocumentSanitization(doc);
+  sanitizeColorElements(elements, view, { recordOverrides: false });
+}
+
+function applyColorSanitization(root: HTMLElement) {
+  const view = root.ownerDocument?.defaultView;
+  if (!view) {
+    return () => {};
+  }
+
+  const elements = collectElementsForSubtreeSanitization(root);
+  const overrides = sanitizeColorElements(elements, view, { recordOverrides: true });
+
+  return () => {
+    for (let index = overrides.length - 1; index >= 0; index -= 1) {
+      const override = overrides[index];
+      const { element, property, previousPriority, previousValue, hadInlineValue } = override;
+      if (hadInlineValue) {
+        element.style.setProperty(property, previousValue, previousPriority);
+      } else {
+        element.style.removeProperty(property);
+      }
+    }
+  };
 }
 
 type WorksheetBuildResult = {
@@ -1548,8 +1723,14 @@ export default function ReportsPage() {
         return;
       }
 
+      let restoreColors: (() => void) | null = null;
       try {
         setExportingMode("image");
+        try {
+          restoreColors = applyColorSanitization(previewContainerRef.current);
+        } catch (sanitizationError) {
+          console.warn("Failed to sanitize colors before export:", sanitizationError);
+        }
         const html2canvasModule = await import("html2canvas");
         const canvas = await html2canvasModule.default(previewContainerRef.current, {
           scale: 2,
@@ -1573,6 +1754,9 @@ export default function ReportsPage() {
         console.error("Failed to export report PNG:", error);
         window.alert("Xuất ảnh không thành công. Vui lòng thử lại.");
       } finally {
+        if (restoreColors) {
+          restoreColors();
+        }
         setExportingMode(null);
       }
     },
