@@ -1,16 +1,25 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, SupabaseClient, User } from "@supabase/supabase-js";
 
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Profile, SessionState } from "@/types/auth";
+import { authStorage } from "@/lib/auth/storage";
 import { resolveProfileRole } from "@/lib/auth/profile-role";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import type { Profile, SessionSnapshot, SessionState } from "@/types/auth";
+
+type LoginCredentials = {
+  phone: string;
+  password: string;
+  remember?: boolean;
+};
 
 interface AuthContextValue {
   supabase: SupabaseClient;
   session: SessionState;
+  isAuthenticated: boolean;
+  login: (credentials: LoginCredentials) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -43,24 +52,87 @@ async function loadProfile(client: SupabaseClient, userId: string) {
     username: data.email ?? "",
     role: resolvedRole,
     fullName: data.full_name ?? `${data.saint_name ?? ""}`.trim(),
-    sector: null, // user_profiles doesn't have sector
-    className: null, // user_profiles doesn't have class_name
+    sector: null,
+    className: null,
   } satisfies Profile;
+}
+
+function fallbackProfile(user: User): Profile {
+  return {
+    id: user.id,
+    username: user.email ?? "",
+    role: "catechist",
+    fullName: user.user_metadata?.full_name ?? "",
+    sector: null,
+    className: null,
+  };
+}
+
+function snapshotFromSession(session: Session, profile: Profile): SessionSnapshot {
+  return {
+    userId: session.user.id,
+    profile,
+    accessToken: session.access_token ?? undefined,
+    refreshToken: session.refresh_token ?? undefined,
+    expiresAt: session.expires_at ? session.expires_at * 1000 : undefined,
+  };
+}
+
+function ensureSnapshotTokens(snapshot: SessionSnapshot): SessionSnapshot {
+  return {
+    ...snapshot,
+    accessToken: snapshot.accessToken,
+    refreshToken: snapshot.refreshToken,
+    expiresAt: snapshot.expiresAt,
+  };
+}
+
+function isTerminalSignOut(event: AuthChangeEvent) {
+  return event === "SIGNED_OUT" || event === "USER_DELETED";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [supabase] = useState(createSupabaseBrowserClient);
-  const [session, setSession] = useState<SessionState>({ isLoading: true });
+  const [session, setSession] = useState<SessionState>({
+    isLoading: true,
+    isAuthenticated: false,
+    session: null,
+  });
+
+  const applySession = useCallback((snapshot: SessionSnapshot | null) => {
+    setSession({
+      isLoading: false,
+      isAuthenticated: Boolean(snapshot),
+      session: snapshot ? ensureSnapshotTokens(snapshot) : null,
+    });
+
+    if (!snapshot) {
+      authStorage.setSession(null);
+      authStorage.setRole(null);
+      return;
+    }
+
+    if (snapshot.accessToken) {
+      authStorage.setSession({
+        accessToken: snapshot.accessToken,
+        refreshToken: snapshot.refreshToken,
+        expiresAt: snapshot.expiresAt,
+      });
+    } else {
+      authStorage.setSession(null);
+    }
+    authStorage.setRole(snapshot.profile.role);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
-    const init = async () => {
+    const bootstrap = async () => {
       const {
-        data: { user },
+        data: { session: currentSession },
         error,
-      } = await supabase.auth.getUser();
+      } = await supabase.auth.getSession();
 
       if (!mounted) return;
 
@@ -68,88 +140,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn("Failed to verify auth state", error);
       }
 
-      if (!user) {
-        setSession({ isLoading: false, session: null });
+      if (!currentSession?.user) {
+        applySession(null);
         return;
       }
 
-      const profile = await loadProfile(supabase, user.id);
+      const profile = await loadProfile(supabase, currentSession.user.id);
 
       if (!mounted) return;
 
-      if (!profile) {
-        setSession({
-          isLoading: false,
-          session: {
-            userId: user.id,
-            profile: {
-              id: user.id,
-              username: user.email ?? "",
-              role: "catechist",
-              fullName: user.user_metadata?.full_name ?? "",
-            },
-          },
-        });
-        return;
-      }
-
-      setSession({
-        isLoading: false,
-        session: {
-          userId: user.id,
-          profile,
-        },
-      });
+      applySession(snapshotFromSession(currentSession, profile ?? fallbackProfile(currentSession.user)));
     };
 
-    init();
+    bootstrap().catch((error) => console.warn("Auth bootstrap failed", error));
 
-    const { data: listener } = supabase.auth.onAuthStateChange(async () => {
-      const {
-        data: { user },
-        error,
-      } = await supabase.auth.getUser();
-
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (!mounted) return;
 
-      if (error) {
-        console.warn("Failed to refresh auth state", error);
-      }
-
-      if (!user) {
-        setSession({ isLoading: false, session: null });
+      if (!nextSession?.user) {
+        if (isTerminalSignOut(event)) {
+          authStorage.clear();
+        } else {
+          authStorage.setSession(null);
+          authStorage.setRole(null);
+        }
+        applySession(null);
         return;
       }
 
-      const profile = await loadProfile(supabase, user.id);
-
+      const profile = await loadProfile(supabase, nextSession.user.id);
       if (!mounted) return;
 
-      setSession({
-        isLoading: false,
-        session: {
-          userId: user.id,
-          profile:
-            profile ?? {
-              id: user.id,
-              username: user.email ?? "",
-              role: "catechist",
-              fullName: user.user_metadata?.full_name ?? "",
-            },
-        },
-      });
+      applySession(snapshotFromSession(nextSession, profile ?? fallbackProfile(nextSession.user)));
     });
 
     return () => {
       mounted = false;
-      listener.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
-  }, [supabase]);
+  }, [supabase, applySession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       supabase,
       session,
+      isAuthenticated: session.isAuthenticated,
+      login: async ({ phone, password, remember }) => {
+        const cleanedPhone = phone.trim();
+        const phoneEmail = `${cleanedPhone}@phone.local`.toLowerCase();
+
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: phoneEmail,
+          password,
+        });
+
+        if (error) {
+          return { error: error.message };
+        }
+
+        const authSession = data.session;
+        const user = data.user ?? authSession?.user;
+
+        if (!authSession || !user) {
+          return { error: "Không thể xác thực người dùng. Vui lòng thử lại." };
+        }
+
+        const profile = await loadProfile(supabase, user.id);
+        applySession(snapshotFromSession(authSession, profile ?? fallbackProfile(user)));
+
+        if (remember) {
+          authStorage.setAccount({ phone: cleanedPhone, password });
+        } else {
+          authStorage.setAccount(null);
+        }
+
+        return {};
+      },
       signOut: async () => {
         try {
           const { error: clientError } = await supabase.auth.signOut({ scope: "local" });
@@ -168,32 +236,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         } catch (error) {
           console.error("Sign out error:", error);
-          // Force redirect even if sign out fails
           window.location.href = "/login";
           return;
         } finally {
-          setSession({ isLoading: false, session: null });
+          authStorage.clear();
+          applySession(null);
         }
 
         router.replace("/login");
         router.refresh();
       },
       refreshProfile: async () => {
-        const currentUserId = session.session?.userId;
-        if (!currentUserId) return;
-        const profile = await loadProfile(supabase, currentUserId);
+        const current = session.session;
+        if (!current) return;
+        const profile = await loadProfile(supabase, current.userId);
         if (profile) {
-          setSession({
-            isLoading: false,
-            session: {
-              userId: currentUserId,
-              profile,
-            },
+          applySession({
+            ...current,
+            profile,
           });
         }
       },
     }),
-    [session, supabase, router],
+    [applySession, router, session, supabase],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

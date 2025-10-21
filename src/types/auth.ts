@@ -9,10 +9,16 @@ export type Profile = {
   className?: string | null;
 };
 
+export type SessionSnapshot = {
+  userId: string;
+  profile: Profile;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+};
+
 export type SessionState = {
   isLoading: boolean;
-  session?: {
-    userId: string;
-    profile: Profile;
-  } | null;
+  isAuthenticated: boolean;
+  session: SessionSnapshot | null;
 };
