@@ -1,6 +1,8 @@
 import Link from "next/link";
 
+import { resolveUserScope } from "@/lib/auth/user-scope";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import type { AppRole } from "@/types/auth";
 
 type SectorIdentifier = {
   key: string;
@@ -92,6 +94,27 @@ type SectorMetricsWithOrder = SectorMetrics & { key: string; order: number };
 
 const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
 const SUPABASE_ATTENDANCE_PAGE_SIZE = 1000;
+
+type SummaryCardLinks = {
+  classes?: string;
+  students?: string;
+  teachers?: string;
+};
+
+const SUMMARY_CARD_LINKS: Record<AppRole, SummaryCardLinks> = {
+  admin: {
+    classes: "/classes",
+    students: "/students",
+    teachers: "/users",
+  },
+  sector_leader: {
+    classes: "/classes",
+    students: "/students",
+  },
+  catechist: {
+    students: "/students",
+  },
+};
 
 const DEFAULT_SECTOR_IDENTIFIERS: SectorIdentifier[] = [
   { key: "CHIEN", label: "Chiên", order: 0 },
@@ -302,6 +325,7 @@ async function fetchRecentAttendanceRecords(
 
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
+  const userScopePromise = resolveUserScope(supabase);
 
   const [
     summaryResult,
@@ -322,6 +346,8 @@ export default async function DashboardPage() {
     supabase.from("classes").select("id, name, sector_id"),
     supabase.from("teachers").select("id, sector, class_id, class_name"),
   ]);
+
+  const { role: currentRole } = await userScopePromise;
 
   const summaryData = summaryResult.data as Partial<SummaryMetrics> | null | undefined;
   const sectorRows = sectorsResult.error
@@ -589,6 +615,35 @@ export default async function DashboardPage() {
     ),
   };
 
+  const cardLinks = SUMMARY_CARD_LINKS[currentRole] ?? SUMMARY_CARD_LINKS.catechist;
+
+  const summaryCards: Array<{ label: string; value: number; href?: string }> = [
+    {
+      label: "Tổng số ngành",
+      value: resolvedSummary.sectors,
+    },
+    {
+      label: "Tổng số lớp",
+      value: resolvedSummary.classes,
+      href: cardLinks.classes,
+    },
+    {
+      label: "Tổng thiếu nhi",
+      value: resolvedSummary.students,
+      href: cardLinks.students,
+    },
+    {
+      label: "Giáo lý viên",
+      value: resolvedSummary.teachers,
+      href: cardLinks.teachers,
+    },
+  ];
+
+  const baseCardClasses =
+    "block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition";
+  const interactiveCardClasses =
+    "hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400";
+
   const totalStudentsCount = Math.max(resolvedSummary.students, 0);
 
   const fallbackSectors: SectorMetricsWithOrder[] = DEFAULT_SECTOR_IDENTIFIERS.map((identifier) => ({
@@ -661,49 +716,28 @@ export default async function DashboardPage() {
       </div>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Tổng số ngành",
-            value: resolvedSummary.sectors,
-          },
-          {
-            label: "Tổng số lớp",
-            value: resolvedSummary.classes,
-            href: "/classes",
-          },
-          {
-            label: "Tổng thiếu nhi",
-            value: resolvedSummary.students,
-            href: "/students",
-          },
-          {
-            label: "Giáo lý viên",
-            value: resolvedSummary.teachers,
-            href: "/users",
-          },
-        ].map((card) => {
-          const baseClasses =
-            "rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition";
-          const interactiveClasses =
-            "hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400";
+        {summaryCards.map((card) => {
+          const cardClassName = card.href
+            ? `${baseCardClasses} ${interactiveCardClasses}`
+            : baseCardClasses;
+          const content = (
+            <>
+              <p className="text-sm text-slate-500">{card.label}</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
+            </>
+          );
 
           if (card.href) {
             return (
-              <Link
-                key={card.label}
-                href={card.href}
-                className={`${baseClasses} ${interactiveClasses}`}
-              >
-                <p className="text-sm text-slate-500">{card.label}</p>
-                <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
+              <Link key={card.label} href={card.href} className={cardClassName}>
+                {content}
               </Link>
             );
           }
 
           return (
-            <div key={card.label} className={baseClasses}>
-              <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
+            <div key={card.label} className={cardClassName}>
+              {content}
             </div>
           );
         })}
