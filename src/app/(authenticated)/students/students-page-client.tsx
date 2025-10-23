@@ -12,8 +12,13 @@ import { Select } from "@/components/ui/select";
 import { useAuth } from "@/providers/auth-provider";
 import type { AppRole } from "@/types/auth";
 import type { Sector, StudentStatus, StudentWithGrades } from "@/types/database";
-import { fetchClasses, fetchSectors, fetchStudents } from "@/lib/queries/supabase";
-import type { ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
+import {
+  fetchAttendanceRecordsForStudents,
+  fetchClasses,
+  fetchSectors,
+  fetchStudents,
+} from "@/lib/queries/supabase";
+import type { AttendanceRecordRow, ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
 
 type StudentsPageProps = {
   initialSectors?: SectorRow[];
@@ -134,6 +139,81 @@ function parseGradeInput(value: string) {
     return null;
   }
   return parsed;
+}
+
+type NormalizedAttendanceWeekday = "thursday" | "sunday" | "other";
+
+function resolveAttendanceWeekday(
+  weekday?: string | null,
+  eventDate?: string | null,
+): NormalizedAttendanceWeekday {
+  if (weekday) {
+    const normalized = normalizeText(weekday);
+    if (
+      normalized.includes("SUNDAY") ||
+      normalized.includes("CHUNHAT") ||
+      normalized === "CN" ||
+      normalized === "SUN"
+    ) {
+      return "sunday";
+    }
+    if (
+      normalized.includes("THURSDAY") ||
+      normalized.includes("THUNAM") ||
+      normalized.includes("THU5") ||
+      normalized === "T5"
+    ) {
+      return "thursday";
+    }
+  }
+
+  if (eventDate) {
+    const parsed = new Date(`${eventDate}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      const weekdayIndex = parsed.getUTCDay();
+      if (weekdayIndex === 0) {
+        return "sunday";
+      }
+      if (weekdayIndex === 4) {
+        return "thursday";
+      }
+    }
+  }
+
+  return "other";
+}
+
+function isPresentStatus(status?: string | null) {
+  if (!status) {
+    return false;
+  }
+  const normalized = normalizeText(status);
+  if (!normalized) {
+    return false;
+  }
+  if (
+    normalized === "PRESENT" ||
+    normalized === "YES" ||
+    normalized === "TRUE" ||
+    normalized === "1" ||
+    normalized === "ATTEND" ||
+    normalized === "ATTENDED" ||
+    normalized === "CO" ||
+    normalized === "X"
+  ) {
+    return true;
+  }
+  if (
+    normalized === "ABSENT" ||
+    normalized === "NO" ||
+    normalized === "FALSE" ||
+    normalized === "0" ||
+    normalized === "VANG" ||
+    normalized === "NGHI"
+  ) {
+    return false;
+  }
+  return normalized === "P";
 }
 
 export default function StudentsPage({
@@ -264,6 +344,60 @@ export default function StudentsPage({
     initialData: initialStudentsForQuery,
     enabled: studentsEnabled,
   });
+
+  const studentIdsForAttendance = useMemo(() => {
+    const ids = studentRows
+      .map((row) => (typeof row.id === "string" ? row.id.trim() : ""))
+      .filter((value): value is string => value.length > 0);
+    ids.sort();
+    return ids;
+  }, [studentRows]);
+
+  const {
+    data: attendanceRecords = [],
+    isLoading: isLoadingAttendanceRecords,
+    error: attendanceRecordsError,
+  } = useQuery<AttendanceRecordRow[]>({
+    queryKey: ["students", "attendance-records", studentIdsForAttendance.join("|")],
+    queryFn: () => fetchAttendanceRecordsForStudents(supabase, studentIdsForAttendance),
+    enabled: studentsEnabled && studentIdsForAttendance.length > 0,
+  });
+
+  const attendanceTotalsByStudent = useMemo(() => {
+    const totals = new Map<string, { thursday: number; sunday: number }>();
+    if (!attendanceRecords.length) {
+      return totals;
+    }
+
+    attendanceRecords.forEach((record) => {
+      const studentId = record.student_id?.trim();
+      if (!studentId) {
+        return;
+      }
+      if (!isPresentStatus(record.status)) {
+        return;
+      }
+
+      const normalizedWeekday = resolveAttendanceWeekday(record.weekday, record.event_date);
+      if (normalizedWeekday !== "thursday" && normalizedWeekday !== "sunday") {
+        return;
+      }
+
+      let entry = totals.get(studentId);
+      if (!entry) {
+        entry = { thursday: 0, sunday: 0 };
+        totals.set(studentId, entry);
+      }
+
+      if (normalizedWeekday === "thursday") {
+        entry.thursday += 1;
+      } else {
+        entry.sunday += 1;
+      }
+    });
+
+    return totals;
+  }, [attendanceRecords]);
 
   const [students, setStudents] = useState<StudentWithGrades[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -441,9 +575,13 @@ type StudentInfoMutationPayload = {
     },
   });
 
-  const isLoadingData = isLoadingSectors || isLoadingClasses || isLoadingStudents;
+  const isLoadingData =
+    isLoadingSectors || isLoadingClasses || isLoadingStudents || isLoadingAttendanceRecords;
   const queryError =
-    (sectorsError as Error | null) || (classesError as Error | null) || (studentsError as Error | null);
+    (sectorsError as Error | null) ||
+    (classesError as Error | null) ||
+    (studentsError as Error | null) ||
+    (attendanceRecordsError as Error | null);
   const queryClient = useQueryClient();
   const nameCollator = useMemo(() => new Intl.Collator("vi", { sensitivity: "base" }), []);
   const [studentSaveError, setStudentSaveError] = useState<string | null>(null);
@@ -486,6 +624,10 @@ type StudentInfoMutationPayload = {
       const hk2Total =
         toNumberOrNull(student.attendance_hk2_total) ??
         toNumberOrNull(student.attendance_sunday_total);
+
+      const attendanceTotals = attendanceTotalsByStudent.get(student.id.trim());
+      const thursdayCount = attendanceTotals?.thursday ?? (hk1Present ?? 0);
+      const sundayCount = attendanceTotals?.sunday ?? (hk2Present ?? 0);
 
       const attendanceThursdayScore = calculateAttendanceScore(hk1Present, hk1Total);
       const attendanceSundayScore = calculateAttendanceScore(hk2Present, hk2Total);
@@ -537,15 +679,15 @@ type StudentInfoMutationPayload = {
           total_avg: totalAvg,
         },
         attendance_stats: {
-          thursday_count: hk1Present ?? 0,
-          sunday_count: hk2Present ?? 0,
+          thursday_count: thursdayCount,
+          sunday_count: sundayCount,
           thursday_score: attendanceThursdayScore,
           sunday_score: attendanceSundayScore,
           attendance_score: attendanceAvg,
         },
       };
     },
-    [classMap],
+    [classMap, attendanceTotalsByStudent],
   );
 
   useEffect(() => {
@@ -1113,12 +1255,20 @@ type StudentInfoMutationPayload = {
                     {student.grades.catechism_avg != null ? student.grades.catechism_avg.toFixed(2) : "-"}
                   </td>
                   <td className="p-3 text-center text-slate-600">
-                    {student.attendance_stats.thursday_count} (
-                    {student.attendance_stats.thursday_score?.toFixed(1) || "-"})
+                    {student.attendance_stats.thursday_score != null
+                      ? student.attendance_stats.thursday_score.toFixed(1)
+                      : "-"}
+                    <span className="ml-1 text-xs text-slate-500">
+                      ({student.attendance_stats.thursday_count})
+                    </span>
                   </td>
                   <td className="p-3 text-center text-slate-600">
-                    {student.attendance_stats.sunday_count} (
-                    {student.attendance_stats.sunday_score?.toFixed(1) || "-"})
+                    {student.attendance_stats.sunday_score != null
+                      ? student.attendance_stats.sunday_score.toFixed(1)
+                      : "-"}
+                    <span className="ml-1 text-xs text-slate-500">
+                      ({student.attendance_stats.sunday_count})
+                    </span>
                   </td>
                   <td className="p-3 text-center font-semibold text-blue-700">
                     {student.grades.attendance_avg != null ? student.grades.attendance_avg.toFixed(2) : "-"}
