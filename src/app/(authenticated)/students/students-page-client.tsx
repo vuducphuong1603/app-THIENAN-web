@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/providers/auth-provider";
+import type { AppRole } from "@/types/auth";
 import type { Sector, StudentStatus, StudentWithGrades } from "@/types/database";
 import { fetchClasses, fetchSectors, fetchStudents } from "@/lib/queries/supabase";
 import type { ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
@@ -18,6 +19,8 @@ type StudentsPageProps = {
   initialSectors?: SectorRow[];
   initialClasses?: ClassRow[];
   initialStudents?: StudentRow[];
+  currentRole: AppRole;
+  assignedClassId?: string | null;
 };
 
 const SECTOR_CODE_TO_LABEL: Record<string, Sector> = {
@@ -137,10 +140,19 @@ export default function StudentsPage({
   initialSectors,
   initialClasses,
   initialStudents,
+  currentRole,
+  assignedClassId = null,
 }: StudentsPageProps) {
   const searchParams = useSearchParams();
-  const classFilter = searchParams?.get("class") || "";
   const { supabase } = useAuth();
+  const sanitizedAssignedClassId = sanitizeClassId(assignedClassId);
+  const normalizedAssignedClassId = normalizeClassId(assignedClassId);
+  const isCatechist = currentRole === "catechist";
+  const hasAssignedClass = sanitizedAssignedClassId.length > 0;
+  const shouldScopeQuery = isCatechist && hasAssignedClass;
+  const restrictClassSelection = isCatechist;
+  const queryParamClass = sanitizeClassId(searchParams?.get("class") || "");
+  const initialSelectedClassValue = shouldScopeQuery ? sanitizedAssignedClassId : queryParamClass;
 
   const {
     data: sectorRows = [],
@@ -170,8 +182,17 @@ export default function StudentsPage({
     initialData: initialClasses,
   });
 
+  const classRowsForDisplay = useMemo(() => {
+    if (!hasAssignedClass || !normalizedAssignedClassId) {
+      return classRows;
+    }
+    return classRows.filter(
+      (cls) => normalizeClassId(cls.id) === normalizedAssignedClassId,
+    );
+  }, [classRows, hasAssignedClass, normalizedAssignedClassId]);
+
   const classOptions = useMemo(() => {
-    return classRows
+    return classRowsForDisplay
       .map((cls) => {
         const id = sanitizeClassId(cls.id);
         const trimmedName = cls.name?.trim();
@@ -212,7 +233,7 @@ export default function StudentsPage({
         }
         return a.name.localeCompare(b.name);
       });
-  }, [classRows, sectorById]);
+  }, [classRowsForDisplay, sectorById]);
 
   const classMap = useMemo(() => {
     const map = new Map<string, { name: string; sector: Sector }>();
@@ -222,20 +243,55 @@ export default function StudentsPage({
     return map;
   }, [classOptions]);
 
+  const studentQueryKey = useMemo(
+    () => ["students", "list", shouldScopeQuery ? normalizedAssignedClassId : "all"],
+    [normalizedAssignedClassId, shouldScopeQuery],
+  );
+
+  const studentsEnabled = !isCatechist || hasAssignedClass;
+  const initialStudentsForQuery: StudentRow[] | undefined = studentsEnabled ? initialStudents : [];
+
   const {
     data: studentRows = [],
     isLoading: isLoadingStudents,
     error: studentsError,
   } = useQuery<StudentRow[]>({
-    queryKey: ["students", "list"],
-    queryFn: () => fetchStudents(supabase),
-    initialData: initialStudents,
+    queryKey: studentQueryKey,
+    queryFn: () =>
+      shouldScopeQuery
+        ? fetchStudents(supabase, { classId: sanitizedAssignedClassId })
+        : fetchStudents(supabase),
+    initialData: initialStudentsForQuery,
+    enabled: studentsEnabled,
   });
 
   const [students, setStudents] = useState<StudentWithGrades[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedClass, setSelectedClass] = useState(classFilter);
+  const [selectedClass, setSelectedClass] = useState(initialSelectedClassValue);
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "ALL">("ACTIVE");
+
+  useEffect(() => {
+    if (shouldScopeQuery) {
+      setSelectedClass(sanitizedAssignedClassId);
+    }
+  }, [shouldScopeQuery, sanitizedAssignedClassId]);
+
+  const defaultFormClassId = hasAssignedClass ? sanitizedAssignedClassId : "";
+  const classSelectPlaceholder = restrictClassSelection
+    ? hasAssignedClass
+      ? "Lớp được phân"
+      : "Chưa được phân lớp"
+    : "Chọn lớp";
+  const classFilterPlaceholder = restrictClassSelection
+    ? hasAssignedClass
+      ? "Lớp được phân"
+      : "Chưa được phân lớp"
+    : "Tất cả lớp";
+  const classSelectHelperText = restrictClassSelection
+    ? hasAssignedClass
+      ? "Bạn chỉ quản lý lớp được phân công."
+      : "Bạn chưa được phân lớp - liên hệ quản trị để được hỗ trợ."
+    : undefined;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -245,7 +301,7 @@ export default function StudentsPage({
 
   const [formData, setFormData] = useState({
     student_code: "",
-    class_id: "",
+    class_id: defaultFormClassId,
     saint_name: "",
     full_name: "",
     date_of_birth: "",
@@ -640,7 +696,7 @@ type StudentInfoMutationPayload = {
       setSelectedStudent(null);
       setFormData({
         student_code: "",
-        class_id: "",
+        class_id: defaultFormClassId,
         saint_name: "",
         full_name: "",
         date_of_birth: "",
@@ -672,7 +728,7 @@ type StudentInfoMutationPayload = {
     setSelectedStudent(null);
     setFormData({
       student_code: "",
-      class_id: "",
+      class_id: defaultFormClassId,
       saint_name: "",
       full_name: "",
       date_of_birth: "",
@@ -694,7 +750,7 @@ type StudentInfoMutationPayload = {
     setSelectedStudent(student);
     setFormData({
       student_code: student.student_code,
-      class_id: student.class_id,
+      class_id: sanitizeClassId(student.class_id),
       saint_name: student.saint_name || "",
       full_name: student.full_name,
       date_of_birth: student.date_of_birth,
@@ -874,6 +930,13 @@ type StudentInfoMutationPayload = {
         </div>
       )}
 
+      {isCatechist && !hasAssignedClass && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4" />
+          Bạn chưa được phân lớp. Vui lòng liên hệ quản trị để được cấp quyền trước khi quản lý thiếu nhi.
+        </div>
+      )}
+
       <Card>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <div className="relative xl:col-span-1">
@@ -888,11 +951,12 @@ type StudentInfoMutationPayload = {
           </div>
 
           <select
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
             value={selectedClass}
-            onChange={(e) => setSelectedClass(e.target.value)}
+            onChange={(e) => setSelectedClass(sanitizeClassId(e.target.value))}
+            disabled={restrictClassSelection}
           >
-            <option value="">Tất cả lớp</option>
+            <option value="">{classFilterPlaceholder}</option>
             {classOptions.map((cls) => (
               <option key={cls.id} value={cls.id}>
                 {cls.name}
@@ -1151,11 +1215,15 @@ type StudentInfoMutationPayload = {
               <Select
                 label="Lớp"
                 options={[
-                  { value: "", label: "Chọn lớp" },
+                  { value: "", label: classSelectPlaceholder },
                   ...classOptions.map((c) => ({ value: c.id, label: c.name })),
                 ]}
                 value={formData.class_id}
-                onChange={(e) => setFormData({ ...formData, class_id: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, class_id: sanitizeClassId(e.target.value) })
+                }
+                disabled={restrictClassSelection}
+                helperText={classSelectHelperText}
               />
               <Input
                 label="Tên thánh"

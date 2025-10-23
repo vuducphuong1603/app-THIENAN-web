@@ -458,13 +458,34 @@ export async function fetchStudentClassPairs(supabase: SupabaseClient): Promise<
   return allRows;
 }
 
-export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRow[]> {
+type FetchStudentsOptions = {
+  classId?: string | null;
+};
+
+export async function fetchStudents(
+  supabase: SupabaseClient,
+  options?: FetchStudentsOptions,
+): Promise<StudentRow[]> {
   const pageSize = SUPABASE_STUDENTS_PAGE_SIZE;
   const allRows: StudentRow[] = [];
-  const { data: firstBatchData, error: firstError, count } = await supabase
-    .from("students")
-    .select("*", { count: "exact" })
-    .range(0, pageSize - 1);
+  const scopedClassId = options?.classId?.trim() ?? "";
+  const hasClassScope = scopedClassId.length > 0;
+
+  const buildStudentQuery = (withCount: boolean) => {
+    let query = supabase
+      .from("students")
+      .select("*", withCount ? { count: "exact" as const } : undefined);
+    if (hasClassScope) {
+      query = query.eq("class_id", scopedClassId);
+    }
+    return query;
+  };
+
+  const {
+    data: firstBatchData,
+    error: firstError,
+    count,
+  } = await buildStudentQuery(true).range(0, pageSize - 1);
 
   if (firstError) {
     if (isIgnorableSupabaseError(firstError)) {
@@ -489,7 +510,7 @@ export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRo
     let from = firstBatch.length;
     while (true) {
       const to = from + pageSize - 1;
-      const { data, error } = await supabase.from("students").select("*").range(from, to);
+      const { data, error } = await buildStudentQuery(false).range(from, to);
 
       if (error) {
         if (isIgnorableSupabaseError(error)) {
@@ -525,7 +546,7 @@ export async function fetchStudents(supabase: SupabaseClient): Promise<StudentRo
       pageChunk.map((page) => {
         const from = page * pageSize;
         const to = from + pageSize - 1;
-        return supabase.from("students").select("*").range(from, to);
+        return buildStudentQuery(false).range(from, to);
       }),
     );
 
