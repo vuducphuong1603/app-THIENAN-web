@@ -61,10 +61,12 @@ export async function resolveUserScope(supabase: SupabaseClient): Promise<UserCl
       console.warn("Failed to resolve profile role for user scope", roleError);
     }
 
+    const sanitizedProfileClassId = sanitizeClassId(profile?.class_id);
     const normalizedProfileClassId = normalizeClassId(profile?.class_id);
-    let assignedClassId = sanitizeClassId(profile?.class_id) || null;
+    let assignedClassId = sanitizedProfileClassId.length > 0 ? sanitizedProfileClassId : null;
+    let teacherClassId: string | null = null;
 
-    if (!assignedClassId && profile?.phone) {
+    if (profile?.phone) {
       try {
         const {
           data: teacher,
@@ -81,11 +83,16 @@ export async function resolveUserScope(supabase: SupabaseClient): Promise<UserCl
           }
         } else if (teacher?.class_id) {
           const trimmed = sanitizeClassId(teacher.class_id);
-          assignedClassId = trimmed.length > 0 ? trimmed : null;
+          teacherClassId = trimmed.length > 0 ? trimmed : null;
         }
       } catch (teacherLookupError) {
         console.warn("Teacher lookup failed for user scope", teacherLookupError);
       }
+    }
+
+    const normalizedTeacherClassId = normalizeClassId(teacherClassId);
+    if (normalizedTeacherClassId.length > 0) {
+      assignedClassId = teacherClassId;
     }
 
     const normalizedAssignedClassId = normalizeClassId(assignedClassId);
@@ -116,4 +123,3 @@ export async function resolveUserScope(supabase: SupabaseClient): Promise<UserCl
     return defaultScope;
   }
 }
-
