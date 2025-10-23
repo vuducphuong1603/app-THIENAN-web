@@ -313,6 +313,9 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                   alt="Huy hiệu Thiếu Nhi Thánh Thể Việt Nam"
                   width={120}
                   height={120}
+                  priority
+                  unoptimized
+                  crossOrigin="anonymous"
                   className="h-24 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
                 />
                 <div className="flex min-w-[220px] flex-1 flex-col items-center text-center">
@@ -331,6 +334,9 @@ const ScoreReportPreview = forwardRef<HTMLElement, ScoreReportPreviewProps>(
                   alt="Logo Xứ Đoàn Đức Mẹ Fatima - Giáo Xứ Thiên Ân"
                   width={120}
                   height={120}
+                  priority
+                  unoptimized
+                  crossOrigin="anonymous"
                   className="h-24 w-24 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
                 />
               </div>
