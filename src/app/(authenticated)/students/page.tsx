@@ -25,7 +25,7 @@ export default async function StudentsPageRoute() {
   const normalizedAssignedClassId = normalizeClassId(assignedClassId);
   const isCatechist = currentRole === "catechist";
   const hasAssignedClass = normalizedAssignedClassId.length > 0;
-  const classScopeId = hasAssignedClass ? assignedClassId : null;
+  const classScopeId = isCatechist && hasAssignedClass ? assignedClassId : null;
   const shouldFetchStudents = !isCatechist || hasAssignedClass;
 
   const studentsPromise: Promise<StudentRow[]> = shouldFetchStudents

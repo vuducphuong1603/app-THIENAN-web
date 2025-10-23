@@ -2,7 +2,7 @@
 
 import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -263,13 +263,13 @@ export default function StudentsPage({
   });
 
   const classRowsForDisplay = useMemo(() => {
-    if (!hasAssignedClass || !normalizedAssignedClassId) {
+    if (!shouldScopeQuery || !normalizedAssignedClassId) {
       return classRows;
     }
     return classRows.filter(
       (cls) => normalizeClassId(cls.id) === normalizedAssignedClassId,
     );
-  }, [classRows, hasAssignedClass, normalizedAssignedClassId]);
+  }, [classRows, normalizedAssignedClassId, shouldScopeQuery]);
 
   const classOptions = useMemo(() => {
     return classRowsForDisplay
@@ -400,6 +400,7 @@ export default function StudentsPage({
   }, [attendanceRecords]);
 
   const [students, setStudents] = useState<StudentWithGrades[]>([]);
+  const studentListSnapshotRef = useRef<string>("[]");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedClass, setSelectedClass] = useState(initialSelectedClassValue);
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "ALL">("ACTIVE");
@@ -410,7 +411,7 @@ export default function StudentsPage({
     }
   }, [shouldScopeQuery, sanitizedAssignedClassId]);
 
-  const defaultFormClassId = hasAssignedClass ? sanitizedAssignedClassId : "";
+  const defaultFormClassId = shouldScopeQuery ? sanitizedAssignedClassId : "";
   const classSelectPlaceholder = restrictClassSelection
     ? hasAssignedClass
       ? "Lớp được phân"
@@ -692,6 +693,7 @@ type StudentInfoMutationPayload = {
 
   useEffect(() => {
     if (!studentRows.length) {
+      studentListSnapshotRef.current = "[]";
       setStudents((previous) => {
         if (!previous.length) {
           return previous;
@@ -711,6 +713,12 @@ type StudentInfoMutationPayload = {
         return a.student_code.localeCompare(b.student_code);
       });
 
+    const nextSnapshot = JSON.stringify(transformed);
+    if (studentListSnapshotRef.current === nextSnapshot) {
+      return;
+    }
+
+    studentListSnapshotRef.current = nextSnapshot;
     setStudents(transformed);
   }, [studentRows, convertStudentRow, nameCollator]);
 
