@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { endOfWeek, format, startOfWeek, subWeeks } from "date-fns";
 import clsx from "clsx";
 
+import { resolveUserScope, normalizeClassId, sanitizeClassId, type UserClassScope } from "@/lib/auth/user-scope";
 import { useAuth } from "@/providers/auth-provider";
 import {
   fetchAttendanceRecordsForStudents,
@@ -72,6 +73,10 @@ const SECTOR_ID_TO_SECTOR: Record<number, Sector> = {
 type ClassOption = {
   value: string;
   label: string;
+};
+
+type ClassOptionWithSector = ClassOption & {
+  sector: Sector | null;
 };
 
 const DEFAULT_SCORE_COLUMN_IDS: ScoreColumnId[] = SCORE_COLUMN_DEFINITIONS.map(
@@ -1487,6 +1492,35 @@ function slugifyForFilename(value: string) {
 
 export default function ReportsPage() {
   const { supabase } = useAuth();
+  const [userScope, setUserScope] = useState<UserClassScope | null>(null);
+  const [isLoadingScope, setIsLoadingScope] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadScope = async () => {
+      setIsLoadingScope(true);
+      const scope = await resolveUserScope(supabase);
+      if (!mounted) {
+        return;
+      }
+      setUserScope(scope);
+      setIsLoadingScope(false);
+    };
+
+    loadScope().catch((error) => {
+      console.warn("Failed to load user scope for reports page", error);
+      if (mounted) {
+        setUserScope({ role: "catechist", assignedClassId: null });
+        setIsLoadingScope(false);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, [supabase]);
+
   const {
     data: classRows = [],
     isLoading: isLoadingClasses,
@@ -1495,6 +1529,24 @@ export default function ReportsPage() {
     queryFn: () => fetchClasses(supabase),
     enabled: !!supabase,
   });
+
+  const sanitizedAssignedClassId = sanitizeClassId(userScope?.assignedClassId);
+  const normalizedAssignedClassId = normalizeClassId(userScope?.assignedClassId);
+  const isCatechist = userScope?.role === "catechist";
+  const hasAssignedClass = sanitizedAssignedClassId.length > 0;
+  const restrictClassSelection = Boolean(isCatechist);
+
+  const classRowsForDisplay = useMemo(() => {
+    if (!isCatechist) {
+      return classRows;
+    }
+
+    if (!hasAssignedClass) {
+      return [];
+    }
+
+    return classRows.filter((cls) => normalizeClassId(cls.id) === normalizedAssignedClassId);
+  }, [classRows, isCatechist, hasAssignedClass, normalizedAssignedClassId]);
 
   const [timeMode, setTimeMode] = useState<TimeMode>("week");
   const [selectedType, setSelectedType] = useState("attendance");
@@ -1571,6 +1623,30 @@ export default function ReportsPage() {
     return map;
   }, [classRows]);
 
+  const classOptions = useMemo<ClassOptionWithSector[]>(() => {
+    return classRowsForDisplay
+      .map((cls) => {
+        const trimmedId = cls.id?.trim();
+        if (!trimmedId) {
+          return null;
+        }
+
+        const trimmedName = cls.name?.trim();
+        const trimmedCode = cls.code != null ? cls.code.toString().trim() : "";
+        const displayLabel =
+          (trimmedName && trimmedName.length > 0 ? trimmedName : null) ??
+          (trimmedCode && trimmedCode.length > 0 ? trimmedCode : null) ??
+          trimmedId;
+
+        return {
+          value: trimmedId,
+          label: displayLabel,
+          sector: inferClassSector(cls),
+        };
+      })
+      .filter((value): value is ClassOptionWithSector => Boolean(value));
+  }, [classRowsForDisplay]);
+
   const classesBySector = useMemo(() => {
     const initial: Record<Sector, ClassOption[]> = {
       "CHIÊN": [],
@@ -1580,32 +1656,16 @@ export default function ReportsPage() {
     };
     const seen = new Set<string>();
 
-    classRows.forEach((cls) => {
-      const trimmedId = cls.id?.trim();
-      if (!trimmedId) {
+    classOptions.forEach((option) => {
+      if (!option.sector) {
         return;
       }
-
-      const resolvedSector = inferClassSector(cls);
-      if (!resolvedSector) {
-        return;
-      }
-
-      const dedupeKey = `${resolvedSector}::${trimmedId}`;
+      const dedupeKey = `${option.sector}::${option.value}`;
       if (seen.has(dedupeKey)) {
         return;
       }
       seen.add(dedupeKey);
-
-      const trimmedName = cls.name?.trim();
-      const trimmedCode = cls.code?.trim();
-
-      const displayLabel =
-        (trimmedName && trimmedName.length > 0 ? trimmedName : null) ??
-        (trimmedCode && trimmedCode.length > 0 ? trimmedCode : null) ??
-        trimmedId;
-
-      initial[resolvedSector].push({ value: trimmedId, label: displayLabel });
+      initial[option.sector].push({ value: option.value, label: option.label });
     });
 
     (Object.values(initial) as ClassOption[][]).forEach((options) => {
@@ -1613,12 +1673,63 @@ export default function ReportsPage() {
     });
 
     return initial;
-  }, [classRows]);
+  }, [classOptions]);
+
+  const assignedClassOption = useMemo(() => {
+    if (!hasAssignedClass) {
+      return null;
+    }
+    return (
+      classOptions.find(
+        (option) => normalizeClassId(option.value) === normalizedAssignedClassId,
+      ) ?? null
+    );
+  }, [classOptions, hasAssignedClass, normalizedAssignedClassId]);
 
   const [selectedSector, setSelectedSector] = useState<Sector | "">("");
   const [selectedClass, setSelectedClass] = useState("");
 
   useEffect(() => {
+    if (!restrictClassSelection) {
+      return;
+    }
+
+    if (!hasAssignedClass) {
+      if (selectedSector !== "") {
+        setSelectedSector("");
+      }
+      if (selectedClass !== "") {
+        setSelectedClass("");
+      }
+      return;
+    }
+
+    if (assignedClassOption) {
+      if (assignedClassOption.sector && selectedSector !== assignedClassOption.sector) {
+        setSelectedSector(assignedClassOption.sector);
+      }
+      if (selectedClass !== assignedClassOption.value) {
+        setSelectedClass(assignedClassOption.value);
+      }
+      return;
+    }
+
+    if (selectedClass !== sanitizedAssignedClassId) {
+      setSelectedClass(sanitizedAssignedClassId);
+    }
+  }, [
+    restrictClassSelection,
+    hasAssignedClass,
+    assignedClassOption,
+    selectedSector,
+    selectedClass,
+    sanitizedAssignedClassId,
+  ]);
+
+  useEffect(() => {
+    if (restrictClassSelection) {
+      return;
+    }
     if (!selectedSector) {
       if (selectedClass !== "") {
         setSelectedClass("");
@@ -1630,17 +1741,33 @@ export default function ReportsPage() {
     if (selectedClass && !options.some((option) => option.value === selectedClass)) {
       setSelectedClass("");
     }
-  }, [selectedSector, classesBySector, selectedClass]);
+  }, [restrictClassSelection, selectedSector, classesBySector, selectedClass]);
 
-  const sectorClassOptions = selectedSector ? classesBySector[selectedSector] : [];
-  const isClassSelectDisabled = !selectedSector || isLoadingClasses || sectorClassOptions.length === 0;
-  const classPlaceholder = !selectedSector
-    ? "Chọn ngành trước"
-    : isLoadingClasses
-      ? "Đang tải lớp..."
-      : sectorClassOptions.length === 0
-        ? "Không có lớp cho ngành này"
-        : "Tất cả lớp";
+  const sectorClassOptions = useMemo(() => {
+    if (restrictClassSelection) {
+      return classOptions
+        .map(({ value, label }) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label, "vi", { sensitivity: "base" }));
+    }
+
+    return selectedSector ? classesBySector[selectedSector] : [];
+  }, [restrictClassSelection, classOptions, selectedSector, classesBySector]);
+
+  const isClassSelectDisabled = restrictClassSelection
+    ? true
+    : isLoadingScope || !selectedSector || isLoadingClasses || sectorClassOptions.length === 0;
+
+  const classPlaceholder = restrictClassSelection
+    ? hasAssignedClass
+      ? "Lớp được phân"
+      : "Chưa được phân lớp"
+    : !selectedSector
+      ? "Chọn ngành trước"
+      : isLoadingClasses
+        ? "Đang tải lớp..."
+        : sectorClassOptions.length === 0
+          ? "Không có lớp cho ngành này"
+          : "Tất cả lớp";
 
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -1675,7 +1802,7 @@ export default function ReportsPage() {
   }, []);
 
   const handleGenerateReport = useCallback(async () => {
-    const trimmedClassId = selectedClass.trim();
+    const trimmedClassId = sanitizeClassId(selectedClass);
 
     if (!trimmedClassId) {
       setAttendancePreview(null);
@@ -1872,6 +1999,7 @@ export default function ReportsPage() {
 
   const isGenerateDisabled =
     isGeneratingReport ||
+    isLoadingScope ||
     !selectedClass ||
     (selectedType === "attendance" && !hasDateRange);
 
@@ -1984,6 +2112,7 @@ export default function ReportsPage() {
               setSelectedSector(value);
               setSelectedClass("");
             }}
+            disabled={restrictClassSelection || isLoadingScope}
           >
             <option value="">Tất cả ngành</option>
             {SECTORS.map((sector) => (
@@ -1995,7 +2124,7 @@ export default function ReportsPage() {
           <select
             className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900"
             value={selectedClass}
-            onChange={(event) => setSelectedClass(event.target.value)}
+            onChange={(event) => setSelectedClass(sanitizeClassId(event.target.value))}
             disabled={isClassSelectDisabled}
           >
             <option value="">{classPlaceholder}</option>
