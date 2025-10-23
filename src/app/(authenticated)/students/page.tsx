@@ -75,6 +75,7 @@ async function resolveUserScope(supabase: SupabaseClient): Promise<UserScope> {
       console.warn("Failed to resolve profile role for students scope", roleError);
     }
 
+    const normalizedProfileClassId = normalizeClassId(profile?.class_id);
     let assignedClassId = profile?.class_id?.trim() || null;
 
     if (!assignedClassId && profile?.phone) {
@@ -98,6 +99,28 @@ async function resolveUserScope(supabase: SupabaseClient): Promise<UserScope> {
         }
       } catch (teacherLookupError) {
         console.warn("Teacher lookup failed for students scope", teacherLookupError);
+      }
+    }
+
+    const normalizedAssignedClassId = normalizeClassId(assignedClassId);
+    if (
+      assignedClassId &&
+      normalizedAssignedClassId.length > 0 &&
+      normalizedAssignedClassId !== normalizedProfileClassId
+    ) {
+      try {
+        const { error: syncError } = await supabase
+          .from("user_profiles")
+          .update({ class_id: assignedClassId })
+          .eq("id", user.id);
+
+        if (syncError) {
+          if (!isIgnorableSupabaseError(syncError)) {
+            console.warn("Failed to sync user profile class assignment", syncError);
+          }
+        }
+      } catch (syncException) {
+        console.warn("Unexpected error while syncing user profile class assignment", syncException);
       }
     }
 

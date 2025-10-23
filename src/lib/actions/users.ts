@@ -582,15 +582,19 @@ export async function createUser(
     const { data: profile, error: profileError } = await supabase
       .from("user_profiles")
       // Trigger `handle_new_user` may have already inserted a row; upsert keeps data in sync
-      .upsert({
-        id: authData.user.id,
-        email: phoneEmail,
-        phone: trimmedPhone,
-        role: dbRole,
-        full_name: trimmedFullName,
-        saint_name: saintName || null,
-        status: "ACTIVE",
-      }, { onConflict: "id" })
+      .upsert(
+        {
+          id: authData.user.id,
+          email: phoneEmail,
+          phone: trimmedPhone,
+          role: dbRole,
+          full_name: trimmedFullName,
+          saint_name: saintName || null,
+          status: "ACTIVE",
+          class_id: classId && classId.length > 0 ? classId : null,
+        },
+        { onConflict: "id" },
+      )
       .select()
       .single();
 
@@ -657,7 +661,7 @@ export async function createUser(
         address: input.address ?? null,
         status: profile.status as "ACTIVE" | "INACTIVE",
         sector: input.sector || null,
-        class_id: input.class_id || null,
+        class_id: profile.class_id ?? null,
         created_at: profile.created_at,
         updated_at: profile.updated_at,
       },
@@ -691,6 +695,10 @@ export async function updateUser(
       updateData.role = roleToDbValue(normalizeAppRole(input.role));
     }
     if (input.status !== undefined) updateData.status = input.status;
+    if (input.class_id !== undefined) {
+      const trimmedClassId = input.class_id?.trim();
+      updateData.class_id = trimmedClassId && trimmedClassId.length > 0 ? trimmedClassId : null;
+    }
 
     // Debug: Log what we're updating
     console.log("UpdateUser - updateData:", updateData);
@@ -821,7 +829,7 @@ export async function updateUser(
         address: input.address ?? null,
         status: profile.status as "ACTIVE" | "INACTIVE",
         sector: input.sector || null,
-        class_id: input.class_id || null,
+        class_id: profile.class_id ?? null,
         created_at: profile.created_at,
         updated_at: profile.updated_at,
       },
