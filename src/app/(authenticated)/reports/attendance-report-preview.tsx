@@ -229,7 +229,6 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
                   width={120}
                   height={120}
                   className="h-24 w-20 shrink-0 rounded-lg border border-slate-200 bg-white object-contain p-2"
-                  priority
                 />
                 <div className="flex min-w-[220px] flex-1 flex-col items-center text-center">
                   <p
@@ -248,7 +247,6 @@ const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewP
                   width={120}
                   height={120}
                   className="h-24 w-24 shrink-0 rounded-full border border-slate-200 bg-white object-contain p-2"
-                  priority
                 />
               </div>
 
