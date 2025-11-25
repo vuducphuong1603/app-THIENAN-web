@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import type { NavSection } from "@/components/navigation/types";
 import { useAuth } from "@/providers/auth-provider";
-import { fetchClasses, fetchSectors, fetchStudentClassPairs, fetchStudents, fetchTeachers } from "@/lib/queries/supabase";
+import { fetchClasses, fetchSectors, fetchStudentClassPairs, fetchTeachers } from "@/lib/queries/supabase";
 import { AppShell } from "./app-shell";
 
 interface ProtectedLayoutClientProps {
@@ -32,7 +32,6 @@ export function ProtectedLayoutClient({ sections, userName, roleLabel, children 
   }, [sections]);
 
   const shouldWarmClasses = availableRoutes.has("/classes");
-  const shouldWarmStudents = availableRoutes.has("/students");
 
   useEffect(() => {
     let cancelled = false;
@@ -63,16 +62,7 @@ export function ProtectedLayoutClient({ sections, userName, roleLabel, children 
           }),
           queryClient.prefetchQuery({
             queryKey: ["students", "classCounts"],
-            queryFn: () => fetchStudentClassPairs(supabase),
-          }),
-        );
-      }
-
-      if (shouldWarmStudents) {
-        tasks.push(
-          queryClient.prefetchQuery({
-            queryKey: ["students", "list"],
-            queryFn: () => fetchStudents(supabase),
+          queryFn: () => fetchStudentClassPairs(supabase),
           }),
         );
       }
@@ -115,7 +105,7 @@ export function ProtectedLayoutClient({ sections, userName, roleLabel, children 
       cancelled = true;
       cleanup?.();
     };
-  }, [queryClient, supabase, shouldWarmClasses, shouldWarmStudents]);
+  }, [queryClient, supabase, shouldWarmClasses]);
 
   return (
     <AppShell sections={sections} userName={userName} roleLabel={roleLabel} onSignOut={signOut}>

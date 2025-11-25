@@ -94,7 +94,6 @@ export type TeacherRow = {
 
 const SUPABASE_IGNORED_ERROR_CODES = new Set(["42501", "42P01", "42703"]);
 const SUPABASE_STUDENTS_PAGE_SIZE = 1000;
-const SUPABASE_MAX_PARALLEL_PAGES = 4;
 const SUPABASE_IN_QUERY_CHUNK = 100;
 
 const STUDENT_TABLE_BASE_COLUMNS = ["id", "class_id", "full_name"] as const;
@@ -471,21 +470,15 @@ export async function fetchStudents(
   const scopedClassId = options?.classId?.trim() ?? "";
   const hasClassScope = scopedClassId.length > 0;
 
-  const buildStudentQuery = (withCount: boolean) => {
-    let query = supabase
-      .from("students")
-      .select("*", withCount ? { count: "exact" as const } : undefined);
+  const buildStudentQuery = () => {
+    let query = supabase.from("students").select("*");
     if (hasClassScope) {
       query = query.eq("class_id", scopedClassId);
     }
     return query;
   };
 
-  const {
-    data: firstBatchData,
-    error: firstError,
-    count,
-  } = await buildStudentQuery(true).range(0, pageSize - 1);
+  const { data: firstBatchData, error: firstError } = await buildStudentQuery().range(0, pageSize - 1);
 
   if (firstError) {
     if (isIgnorableSupabaseError(firstError)) {
@@ -498,70 +491,33 @@ export async function fetchStudents(
   const firstBatch = (firstBatchData as StudentRow[] | null) ?? [];
   allRows.push(...firstBatch);
 
-  const totalRows = count ?? firstBatch.length;
-
-  // If we have either the full dataset already or the count is smaller than the page size, exit early.
-  if (totalRows <= firstBatch.length) {
+  // If we have the full dataset already, exit early.
+  if (firstBatch.length < pageSize) {
     return allRows;
   }
 
-  // If we weren't able to retrieve an accurate count, fall back to the sequential paging approach.
-  if (count === null) {
-    let from = firstBatch.length;
-    while (true) {
-      const to = from + pageSize - 1;
-      const { data, error } = await buildStudentQuery(false).range(from, to);
+  // Sequentially page through remaining rows without asking Supabase for an exact count.
+  let from = firstBatch.length;
+  while (true) {
+    const to = from + pageSize - 1;
+    const { data, error } = await buildStudentQuery().range(from, to);
 
-      if (error) {
-        if (isIgnorableSupabaseError(error)) {
-          console.warn("Supabase students query fallback:", error.message);
-          return allRows;
-        }
-        throw new Error(error.message);
+    if (error) {
+      if (isIgnorableSupabaseError(error)) {
+        console.warn("Supabase students query fallback:", error.message);
+        return allRows;
       }
-
-      const batch = (data as StudentRow[] | null) ?? [];
-      allRows.push(...batch);
-
-      if (batch.length < pageSize) {
-        break;
-      }
-
-      from += pageSize;
+      throw new Error(error.message);
     }
 
-    return allRows;
-  }
+    const batch = (data as StudentRow[] | null) ?? [];
+    allRows.push(...batch);
 
-  const totalPages = Math.ceil(totalRows / pageSize);
-  if (totalPages <= 1) {
-    return allRows;
-  }
-
-  const remainingPageIndexes = Array.from({ length: totalPages - 1 }, (_, index) => index + 1);
-
-  for (let i = 0; i < remainingPageIndexes.length; i += SUPABASE_MAX_PARALLEL_PAGES) {
-    const pageChunk = remainingPageIndexes.slice(i, i + SUPABASE_MAX_PARALLEL_PAGES);
-    const responses = await Promise.all(
-      pageChunk.map((page) => {
-        const from = page * pageSize;
-        const to = from + pageSize - 1;
-        return buildStudentQuery(false).range(from, to);
-      }),
-    );
-
-    for (const response of responses) {
-      if (response.error) {
-        if (isIgnorableSupabaseError(response.error)) {
-          console.warn("Supabase students query fallback:", response.error.message);
-          return allRows;
-        }
-        throw new Error(response.error.message);
-      }
-
-      const batch = (response.data as StudentRow[] | null) ?? [];
-      allRows.push(...batch);
+    if (batch.length < pageSize) {
+      break;
     }
+
+    from += pageSize;
   }
 
   return allRows;

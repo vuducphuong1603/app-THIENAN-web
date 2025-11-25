@@ -207,6 +207,12 @@ export interface AcademicYear {
   name: string;
   start_date: string;
   end_date: string;
+  semester1_start?: string | null;
+  semester1_end?: string | null;
+  semester2_start?: string | null;
+  semester2_end?: string | null;
+  semester1_weeks?: number | null;
+  semester2_weeks?: number | null;
   total_weeks: number;
   is_current: boolean;
   created_at: string;

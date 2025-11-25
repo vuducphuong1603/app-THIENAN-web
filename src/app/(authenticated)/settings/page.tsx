@@ -7,6 +7,7 @@ import { fetchUserById, updateUser } from "@/lib/actions/users";
 import { getRoleLabel, normalizeAppRole } from "@/lib/auth/roles";
 import { useAuth } from "@/providers/auth-provider";
 import type { AppRole } from "@/types/auth";
+import { AcademicYearSettings } from "./academic-year-settings";
 
 const tabs = [
   { id: "profile", label: "Thông tin cá nhân" },
@@ -55,6 +56,8 @@ export default function SettingsPage() {
   const [passwordFeedback, setPasswordFeedback] = useState<{ type: "success" | "error"; message: string } | null>(
     null
   );
+
+  const canManageAcademicYear = role === "admin";
 
   useEffect(() => {
     if (session.isLoading) return;
@@ -429,36 +432,7 @@ export default function SettingsPage() {
         )}
 
         {activeTab === "academic" && (
-          <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Năm học hiện tại" />
-              <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" placeholder="Tổng số tuần" />
-            </div>
-            <table className="w-full table-auto overflow-hidden rounded-lg border text-sm">
-              <thead className="bg-slate-100 text-left text-xs uppercase text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Năm học</th>
-                  <th className="px-3 py-2">Số tuần</th>
-                  <th className="px-3 py-2">Trạng thái</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                <tr className="text-slate-600">
-                  <td className="px-3 py-2">2025 - 2026</td>
-                  <td className="px-3 py-2">40</td>
-                  <td className="px-3 py-2">Đang dùng</td>
-                </tr>
-                <tr className="text-slate-600">
-                  <td className="px-3 py-2">2024 - 2025</td>
-                  <td className="px-3 py-2">38</td>
-                  <td className="px-3 py-2">Đã kết thúc</td>
-                </tr>
-              </tbody>
-            </table>
-            <div className="flex justify-end">
-              <button className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white">Cập nhật</button>
-            </div>
-          </div>
+          <AcademicYearSettings canEdit={canManageAcademicYear} />
         )}
 
         {activeTab === "notifications" && (

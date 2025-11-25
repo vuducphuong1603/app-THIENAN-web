@@ -3,6 +3,7 @@ import Link from "next/link";
 import { resolveUserScope } from "@/lib/auth/user-scope";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
+import type { AcademicYear } from "@/types/database";
 
 type SectorIdentifier = {
   key: string;
@@ -329,6 +330,7 @@ export default async function DashboardPage() {
 
   const [
     summaryResult,
+    currentAcademicYearResult,
     sectorsCountResult,
     classesCountResult,
     studentsCountResult,
@@ -338,6 +340,11 @@ export default async function DashboardPage() {
     teachersResult,
   ] = await Promise.all([
     supabase.rpc("dashboard_summary").maybeSingle(),
+    supabase
+      .from("academic_years")
+      .select("id, name, total_weeks, start_date, end_date, is_current")
+      .eq("is_current", true)
+      .maybeSingle(),
     supabase.from("sectors").select("id", { count: "exact", head: true }),
     supabase.from("classes").select("id", { count: "exact", head: true }),
     supabase.from("students").select("id", { count: "exact", head: true }),
@@ -350,6 +357,16 @@ export default async function DashboardPage() {
   const { role: currentRole } = await userScopePromise;
 
   const summaryData = summaryResult.data as Partial<SummaryMetrics> | null | undefined;
+  const currentAcademicYear =
+    currentAcademicYearResult.error || !currentAcademicYearResult.data
+      ? null
+      : ((currentAcademicYearResult.data as Partial<AcademicYear>) ?? null);
+  if (currentAcademicYearResult.error) {
+    console.warn(
+      "Dashboard academic year query fallback:",
+      currentAcademicYearResult.error.message ?? currentAcademicYearResult.error,
+    );
+  }
   const sectorRows = sectorsResult.error
     ? []
     : ((sectorsResult.data as SectorRow[] | null | undefined) ?? []);
@@ -570,9 +587,18 @@ export default async function DashboardPage() {
       } satisfies SectorMetricsWithOrder;
     });
 
+  const resolvedAcademicYearName =
+    currentAcademicYear?.name ?? summaryData?.academic_year ?? "Chưa cập nhật";
+  const resolvedTotalWeeks =
+    (typeof currentAcademicYear?.total_weeks === "number" && Number.isFinite(currentAcademicYear.total_weeks)
+      ? currentAcademicYear.total_weeks
+      : null) ??
+    summaryData?.total_weeks ??
+    0;
+
   const baseSummary: SummaryMetrics = {
-    academic_year: summaryData?.academic_year ?? "Chưa cập nhật",
-    total_weeks: summaryData?.total_weeks ?? 0,
+    academic_year: resolvedAcademicYearName,
+    total_weeks: resolvedTotalWeeks,
     sectors: summaryData?.sectors ?? 0,
     classes: summaryData?.classes ?? 0,
     students: summaryData?.students ?? 0,
