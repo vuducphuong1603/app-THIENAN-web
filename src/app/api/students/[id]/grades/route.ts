@@ -185,8 +185,8 @@ function extractGradeUpdates(payload: Record<string, unknown>): UpdatePayload | 
   return updates;
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const studentId = params?.id;
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: studentId } = await params;
 
   if (!studentId) {
     return NextResponse.json({ error: "Thiếu mã thiếu nhi cần cập nhật." }, { status: 400 });

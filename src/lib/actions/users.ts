@@ -632,7 +632,7 @@ export async function createUser(
           .single();
 
         if (classData?.sector) {
-          teacherPayload.sector = SECTOR_LABELS[classData.sector];
+          teacherPayload.sector = SECTOR_LABELS[classData.sector as Sector];
         }
       }
     }
@@ -793,7 +793,7 @@ export async function updateUser(
             .single();
 
           if (classData?.sector) {
-            teacherUpdate.sector = SECTOR_LABELS[classData.sector];
+            teacherUpdate.sector = SECTOR_LABELS[classData.sector as Sector];
           }
         }
       }

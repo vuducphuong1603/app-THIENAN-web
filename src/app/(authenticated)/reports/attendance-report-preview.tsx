@@ -123,7 +123,7 @@ const WEEKDAY_COLORS: Record<
   },
 };
 
-const AttendanceReportPreview = forwardRef<HTMLElement, AttendanceReportPreviewProps>(
+const AttendanceReportPreview = forwardRef<HTMLDivElement, AttendanceReportPreviewProps>(
   (
     { data, isLoading, errorMessage, onExportImage, onExportExcel, exportDisabled, exportingMode },
     ref,

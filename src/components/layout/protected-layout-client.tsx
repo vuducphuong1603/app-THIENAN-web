@@ -32,6 +32,7 @@ export function ProtectedLayoutClient({ sections, userName, roleLabel, children 
   }, [sections]);
 
   const shouldWarmClasses = availableRoutes.has("/classes");
+  const shouldWarmStudents = availableRoutes.has("/students");
 
   useEffect(() => {
     let cancelled = false;

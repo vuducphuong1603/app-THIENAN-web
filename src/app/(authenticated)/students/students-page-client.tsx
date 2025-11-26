@@ -18,6 +18,14 @@ import {
   fetchSectors,
   fetchStudents,
 } from "@/lib/queries/supabase";
+import { fetchAcademicYears } from "@/lib/queries/academic-years";
+import {
+  normalizeText,
+  toNumberOrNull,
+  calculateBulkAttendanceScores,
+  calculateCatechismAverage,
+  calculateTotalScore,
+} from "@/lib/calculations/attendance-score";
 import type { AttendanceRecordRow, ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
 
 type StudentsPageProps = {
@@ -41,14 +49,6 @@ const SECTOR_ORDER: Record<Sector, number> = {
   "THIẾU": 2,
   "NGHĨA": 3,
 };
-
-function normalizeText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-zA-Z0-9]/g, "")
-    .toUpperCase();
-}
 
 function tryResolveSector(value?: string | null): Sector | null {
   if (!value) {
@@ -88,48 +88,6 @@ function normalizeClassId(value?: string | null) {
   return sanitizeClassId(value).toLowerCase();
 }
 
-function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function calculateAttendanceScore(present?: number | null, total?: number | null) {
-  if (!present || !total || total === 0) return null;
-  return Number(((present / total) * 10).toFixed(2));
-}
-
-function calculateAttendanceAverage(
-  hk1Present?: number | null,
-  hk1Total?: number | null,
-  hk2Present?: number | null,
-  hk2Total?: number | null,
-) {
-  const totalSessions = (hk1Total ?? 0) + (hk2Total ?? 0);
-  const totalPresent = (hk1Present ?? 0) + (hk2Present ?? 0);
-  if (totalSessions === 0) return null;
-  return Number(((totalPresent / totalSessions) * 10).toFixed(2));
-}
-
-function calculateCatechismAvg(
-  s1_45min?: number | null,
-  s1_exam?: number | null,
-  s2_45min?: number | null,
-  s2_exam?: number | null,
-) {
-  if (s1_45min == null && s1_exam == null && s2_45min == null && s2_exam == null) {
-    return null;
-  }
-  const sum = (s1_45min ?? 0) + (s2_45min ?? 0) + (s1_exam ?? 0) * 2 + (s2_exam ?? 0) * 2;
-  return Number((sum / 6).toFixed(2));
-}
-
 function parseGradeInput(value: string) {
   if (!value || value.trim() === "") {
     return null;
@@ -139,81 +97,6 @@ function parseGradeInput(value: string) {
     return null;
   }
   return parsed;
-}
-
-type NormalizedAttendanceWeekday = "thursday" | "sunday" | "other";
-
-function resolveAttendanceWeekday(
-  weekday?: string | null,
-  eventDate?: string | null,
-): NormalizedAttendanceWeekday {
-  if (weekday) {
-    const normalized = normalizeText(weekday);
-    if (
-      normalized.includes("SUNDAY") ||
-      normalized.includes("CHUNHAT") ||
-      normalized === "CN" ||
-      normalized === "SUN"
-    ) {
-      return "sunday";
-    }
-    if (
-      normalized.includes("THURSDAY") ||
-      normalized.includes("THUNAM") ||
-      normalized.includes("THU5") ||
-      normalized === "T5"
-    ) {
-      return "thursday";
-    }
-  }
-
-  if (eventDate) {
-    const parsed = new Date(`${eventDate}T00:00:00`);
-    if (!Number.isNaN(parsed.getTime())) {
-      const weekdayIndex = parsed.getUTCDay();
-      if (weekdayIndex === 0) {
-        return "sunday";
-      }
-      if (weekdayIndex === 4) {
-        return "thursday";
-      }
-    }
-  }
-
-  return "other";
-}
-
-function isPresentStatus(status?: string | null) {
-  if (!status) {
-    return false;
-  }
-  const normalized = normalizeText(status);
-  if (!normalized) {
-    return false;
-  }
-  if (
-    normalized === "PRESENT" ||
-    normalized === "YES" ||
-    normalized === "TRUE" ||
-    normalized === "1" ||
-    normalized === "ATTEND" ||
-    normalized === "ATTENDED" ||
-    normalized === "CO" ||
-    normalized === "X"
-  ) {
-    return true;
-  }
-  if (
-    normalized === "ABSENT" ||
-    normalized === "NO" ||
-    normalized === "FALSE" ||
-    normalized === "0" ||
-    normalized === "VANG" ||
-    normalized === "NGHI"
-  ) {
-    return false;
-  }
-  return normalized === "P";
 }
 
 export default function StudentsPage({
@@ -363,41 +246,25 @@ export default function StudentsPage({
     enabled: studentsEnabled && studentIdsForAttendance.length > 0,
   });
 
-  const attendanceTotalsByStudent = useMemo(() => {
-    const totals = new Map<string, { thursday: number; sunday: number }>();
-    if (!attendanceRecords.length) {
-      return totals;
+  // Fetch academic years to get total_weeks for attendance calculation
+  const { data: academicYears = [] } = useQuery({
+    queryKey: ["academic-years"],
+    queryFn: () => fetchAcademicYears(supabase),
+    enabled: !!supabase,
+  });
+
+  const totalWeeksForYear = useMemo(() => {
+    const currentYear = academicYears.find((year) => year.is_current);
+    return currentYear?.total_weeks ?? 0;
+  }, [academicYears]);
+
+  // Use the new week-based attendance calculation
+  const attendanceScoresByStudent = useMemo(() => {
+    if (!attendanceRecords.length || totalWeeksForYear <= 0) {
+      return new Map<string, { weeksWithThursday: number; weeksWithSunday: number; score: number | null }>();
     }
-
-    attendanceRecords.forEach((record) => {
-      const studentId = record.student_id?.trim();
-      if (!studentId) {
-        return;
-      }
-      if (!isPresentStatus(record.status)) {
-        return;
-      }
-
-      const normalizedWeekday = resolveAttendanceWeekday(record.weekday, record.event_date);
-      if (normalizedWeekday !== "thursday" && normalizedWeekday !== "sunday") {
-        return;
-      }
-
-      let entry = totals.get(studentId);
-      if (!entry) {
-        entry = { thursday: 0, sunday: 0 };
-        totals.set(studentId, entry);
-      }
-
-      if (normalizedWeekday === "thursday") {
-        entry.thursday += 1;
-      } else {
-        entry.sunday += 1;
-      }
-    });
-
-    return totals;
-  }, [attendanceRecords]);
+    return calculateBulkAttendanceScores(attendanceRecords, totalWeeksForYear);
+  }, [attendanceRecords, totalWeeksForYear]);
 
   const [students, setStudents] = useState<StudentWithGrades[]>([]);
   const studentListSnapshotRef = useRef<string>("[]");
@@ -611,33 +478,16 @@ type StudentInfoMutationPayload = {
       const semester245 = toNumberOrNull(student.academic_hk2_fortyfive);
       const semester2Exam = toNumberOrNull(student.academic_hk2_exam);
 
-      const catechismAverage = calculateCatechismAvg(semester145, semester1Exam, semester245, semester2Exam);
+      const catechismAverage = calculateCatechismAverage(semester145, semester1Exam, semester245, semester2Exam);
 
-      const hk1Present =
-        toNumberOrNull(student.attendance_hk1_present) ??
-        toNumberOrNull(student.attendance_thursday_present);
-      const hk1Total =
-        toNumberOrNull(student.attendance_hk1_total) ??
-        toNumberOrNull(student.attendance_thursday_total);
-      const hk2Present =
-        toNumberOrNull(student.attendance_hk2_present) ??
-        toNumberOrNull(student.attendance_sunday_present);
-      const hk2Total =
-        toNumberOrNull(student.attendance_hk2_total) ??
-        toNumberOrNull(student.attendance_sunday_total);
+      // Use the new week-based attendance calculation
+      const attendanceResult = attendanceScoresByStudent.get(student.id.trim());
+      const weeksWithThursday = attendanceResult?.weeksWithThursday ?? 0;
+      const weeksWithSunday = attendanceResult?.weeksWithSunday ?? 0;
+      const attendanceAvg = attendanceResult?.score ?? null;
 
-      const attendanceTotals = attendanceTotalsByStudent.get(student.id.trim());
-      const thursdayCount = attendanceTotals?.thursday ?? (hk1Present ?? 0);
-      const sundayCount = attendanceTotals?.sunday ?? (hk2Present ?? 0);
-
-      const attendanceThursdayScore = calculateAttendanceScore(hk1Present, hk1Total);
-      const attendanceSundayScore = calculateAttendanceScore(hk2Present, hk2Total);
-      const attendanceAvg = calculateAttendanceAverage(hk1Present, hk1Total, hk2Present, hk2Total);
-
-      const totalAvg =
-        catechismAverage !== null || attendanceAvg !== null
-          ? Number(((catechismAverage ?? 0) * 0.6 + (attendanceAvg ?? 0) * 0.4).toFixed(2))
-          : null;
+      // Calculate total score using utility function
+      const totalAvg = calculateTotalScore(catechismAverage, attendanceAvg);
 
       const studentCode = student.student_code ?? student.code ?? "";
       const saintName = student.saint_name ?? "";
@@ -680,15 +530,15 @@ type StudentInfoMutationPayload = {
           total_avg: totalAvg,
         },
         attendance_stats: {
-          thursday_count: thursdayCount,
-          sunday_count: sundayCount,
-          thursday_score: attendanceThursdayScore,
-          sunday_score: attendanceSundayScore,
+          thursday_count: weeksWithThursday,
+          sunday_count: weeksWithSunday,
+          thursday_score: null, // No longer calculated separately
+          sunday_score: null, // No longer calculated separately
           attendance_score: attendanceAvg,
         },
       };
     },
-    [classMap, attendanceTotalsByStudent],
+    [classMap, attendanceScoresByStudent],
   );
 
   useEffect(() => {
@@ -975,7 +825,7 @@ type StudentInfoMutationPayload = {
             semester_2_exam: persistedGrades.semester_2_exam,
           };
 
-          const catechismAvg = calculateCatechismAvg(
+          const catechismAvg = calculateCatechismAverage(
             appliedGrades.semester_1_45min,
             appliedGrades.semester_1_exam,
             appliedGrades.semester_2_45min,
@@ -1031,7 +881,7 @@ type StudentInfoMutationPayload = {
 
   const getClassName = (classId: string) => classMap.get(classId)?.name || "N/A";
 
-  const predictedAvg = calculateCatechismAvg(
+  const predictedAvg = calculateCatechismAverage(
     formData.semester_1_45min ? parseFloat(formData.semester_1_45min) : null,
     formData.semester_1_exam ? parseFloat(formData.semester_1_exam) : null,
     formData.semester_2_45min ? parseFloat(formData.semester_2_45min) : null,

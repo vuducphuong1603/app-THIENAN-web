@@ -17,6 +17,15 @@ import {
   type StudentBasicRow,
   type StudentScoreDetailRow,
 } from "@/lib/queries/supabase";
+import { fetchAcademicYears } from "@/lib/queries/academic-years";
+import {
+  normalizeText,
+  toNumberOrNull,
+  isPresentStatus,
+  calculateBulkAttendanceScores,
+  calculateCatechismAverage,
+  calculateTotalScore,
+} from "@/lib/calculations/attendance-score";
 import type { Sector } from "@/types/database";
 import AttendanceReportPreview, {
   type AttendanceReportPreviewData,
@@ -132,14 +141,6 @@ function formatIsoDateLabel(value?: string) {
     return "";
   }
   return format(parsed, "dd/MM/yyyy");
-}
-
-function normalizeText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^A-Z0-9]/gi, "")
-    .toUpperCase();
 }
 
 function resolveSectorFromCandidates(...candidates: Array<string | null | undefined>): Sector | null {
@@ -387,58 +388,6 @@ function filterAttendancePreviewBySession(
   };
 }
 
-function toNumberOrNull(value: unknown): number | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-}
-
-function calculateAttendanceScore(present?: number | null, total?: number | null) {
-  if (present == null || total == null || total === 0) {
-    return null;
-  }
-  return Number(((present / total) * 10).toFixed(2));
-}
-
-function calculateCatechismAverage(
-  semester145?: number | null,
-  semester1Exam?: number | null,
-  semester245?: number | null,
-  semester2Exam?: number | null,
-) {
-  if (
-    semester145 == null &&
-    semester1Exam == null &&
-    semester245 == null &&
-    semester2Exam == null
-  ) {
-    return null;
-  }
-
-  const sum =
-    (semester145 ?? 0) +
-    (semester245 ?? 0) +
-    (semester1Exam ?? 0) * 2 +
-    (semester2Exam ?? 0) * 2;
-
-  return Number((sum / 6).toFixed(2));
-}
-
-function calculateTotalScore(catechismAvg: number | null, attendanceAvg: number | null) {
-  if (catechismAvg == null && attendanceAvg == null) {
-    return null;
-  }
-  const catechismComponent = catechismAvg ?? 0;
-  const attendanceComponent = attendanceAvg ?? 0;
-  return Number((catechismComponent * 0.6 + attendanceComponent * 0.4).toFixed(2));
-}
-
 type BuildScoreReportArgs = {
   students: StudentBasicRow[];
   scoreDetails: StudentScoreDetailRow[];
@@ -446,6 +395,7 @@ type BuildScoreReportArgs = {
   className: string;
   startDate?: string;
   endDate?: string;
+  totalWeeks: number;
 };
 
 function buildScoreReportPreviewData({
@@ -455,6 +405,7 @@ function buildScoreReportPreviewData({
   className,
   startDate,
   endDate,
+  totalWeeks,
 }: BuildScoreReportArgs): ScoreReportPreviewData {
   const detailById = new Map<string, StudentScoreDetailRow>();
   scoreDetails.forEach((detail) => {
@@ -463,83 +414,27 @@ function buildScoreReportPreviewData({
     }
   });
 
-  const thursdayDates = new Set<string>();
-  const sundayDates = new Set<string>();
-  const statusesByStudent = new Map<string, Map<string, "present" | "absent">>();
+  // Use the new week-based calculation
+  const attendanceScoresByStudent = calculateBulkAttendanceScores(attendanceRecords, totalWeeks);
 
-  attendanceRecords.forEach((record) => {
-    const studentId = record.student_id?.trim();
-    const isoDate = record.event_date?.slice(0, 10);
-
-    if (!studentId || !isoDate) {
-      return;
-    }
-
-    const normalizedWeekday = resolveNormalizedWeekday(record.weekday, isoDate);
-    if (normalizedWeekday === "thursday") {
-      thursdayDates.add(isoDate);
-    } else if (normalizedWeekday === "sunday") {
-      sundayDates.add(isoDate);
-    } else {
-      return;
-    }
-
-    let statusMap = statusesByStudent.get(studentId);
-    if (!statusMap) {
-      statusMap = new Map();
-      statusesByStudent.set(studentId, statusMap);
-    }
-
-    const present = isPresentStatus(record.status);
-    const existing = statusMap.get(isoDate);
-    if (existing === "present") {
-      return;
-    }
-    if (present) {
-      statusMap.set(isoDate, "present");
-    } else if (!existing) {
-      statusMap.set(isoDate, "absent");
-    }
-  });
-
-  const thursdayTotal = thursdayDates.size;
-  const sundayTotal = sundayDates.size;
-  const totalSessions = thursdayTotal + sundayTotal;
   const tieBreaker = new Intl.Collator("vi", { sensitivity: "base" });
 
   const rows = students.map((student) => {
     const detail = detailById.get(student.id);
-    const statusMap = statusesByStudent.get(student.id) ?? new Map<string, "present" | "absent">();
+    const attendanceResult = attendanceScoresByStudent.get(student.id.trim());
 
-    let thursdayPresent = 0;
-    let sundayPresent = 0;
-
-    if (thursdayTotal > 0) {
-      thursdayDates.forEach((date) => {
-        if (statusMap.get(date) === "present") {
-          thursdayPresent += 1;
-        }
-      });
-    }
-
-    if (sundayTotal > 0) {
-      sundayDates.forEach((date) => {
-        if (statusMap.get(date) === "present") {
-          sundayPresent += 1;
-        }
-      });
-    }
-
-    const attendanceAverage =
-      totalSessions > 0 ? calculateAttendanceScore(thursdayPresent + sundayPresent, totalSessions) : null;
+    // Week-based counts
+    const weeksWithThursday = attendanceResult?.weeksWithThursday ?? 0;
+    const weeksWithSunday = attendanceResult?.weeksWithSunday ?? 0;
+    const attendanceAverage = attendanceResult?.score ?? null;
 
     const attendance: ScoreReportPreviewData["rows"][number]["attendance"] = {
-      thursdayPresent,
-      thursdayTotal,
-      thursdayScore: thursdayTotal > 0 ? calculateAttendanceScore(thursdayPresent, thursdayTotal) : null,
-      sundayPresent,
-      sundayTotal,
-      sundayScore: sundayTotal > 0 ? calculateAttendanceScore(sundayPresent, sundayTotal) : null,
+      thursdayPresent: weeksWithThursday,
+      thursdayTotal: totalWeeks,
+      thursdayScore: null, // No longer calculated separately
+      sundayPresent: weeksWithSunday,
+      sundayTotal: totalWeeks,
+      sundayScore: null, // No longer calculated separately
       averageScore: attendanceAverage,
     };
 
@@ -568,8 +463,8 @@ function buildScoreReportPreviewData({
       attendance,
       catechism,
       totalScore,
-      rank: null,
-      result: null,
+      rank: null as number | null,
+      result: null as string | null,
     };
   });
 
@@ -650,9 +545,9 @@ function buildScoreReportPreviewData({
     endDate: resolvedEnd,
     rows: sortedRows,
     summary: {
-      thursdaySessions: thursdayTotal,
-      sundaySessions: sundayTotal,
-      totalSessions,
+      thursdaySessions: totalWeeks,
+      sundaySessions: totalWeeks,
+      totalSessions: totalWeeks,
     },
   };
 }
@@ -737,39 +632,6 @@ function buildRangeLabel(startDate: string, endDate: string) {
   }
 
   return startLabel || endLabel || "Không xác định";
-}
-
-function isPresentStatus(status?: string | null) {
-  if (!status) {
-    return false;
-  }
-  const normalized = normalizeText(status);
-  if (!normalized) {
-    return false;
-  }
-  if (
-    normalized === "PRESENT" ||
-    normalized === "YES" ||
-    normalized === "TRUE" ||
-    normalized === "1" ||
-    normalized === "ATTEND" ||
-    normalized === "ATTENDED" ||
-    normalized === "CO" ||
-    normalized === "X"
-  ) {
-    return true;
-  }
-  if (
-    normalized === "ABSENT" ||
-    normalized === "NO" ||
-    normalized === "FALSE" ||
-    normalized === "0" ||
-    normalized === "VANG" ||
-    normalized === "NGHI"
-  ) {
-    return false;
-  }
-  return normalized === "P";
 }
 
 const COLOR_PROPERTIES_FOR_EXPORT = [
@@ -1530,6 +1392,18 @@ export default function ReportsPage() {
     enabled: !!supabase,
   });
 
+  // Fetch academic years to get total_weeks for attendance calculation
+  const { data: academicYears = [] } = useQuery({
+    queryKey: ["academic-years"],
+    queryFn: () => fetchAcademicYears(supabase),
+    enabled: !!supabase,
+  });
+
+  const totalWeeksForYear = useMemo(() => {
+    const currentYear = academicYears.find((year) => year.is_current);
+    return currentYear?.total_weeks ?? 0;
+  }, [academicYears]);
+
   const sanitizedAssignedClassId = sanitizeClassId(userScope?.assignedClassId);
   const normalizedAssignedClassId = normalizeClassId(userScope?.assignedClassId);
   const isCatechist = userScope?.role === "catechist";
@@ -1778,7 +1652,7 @@ export default function ReportsPage() {
   ]);
   const [scorePreview, setScorePreview] = useState<ScoreReportPreviewData | null>(null);
   const [exportingMode, setExportingMode] = useState<"image" | "excel" | null>(null);
-  const previewContainerRef = useRef<HTMLElement | null>(null);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
   const hasDateRange = useMemo(() => {
     if (timeMode === "week") {
       return Boolean(activeWeek?.startDate && activeWeek?.endDate);
@@ -1873,6 +1747,7 @@ export default function ReportsPage() {
           className: classNameById.get(trimmedClassId) ?? trimmedClassId,
           startDate,
           endDate,
+          totalWeeks: totalWeeksForYear,
         });
 
         setScorePreview(previewData);
@@ -1896,6 +1771,7 @@ export default function ReportsPage() {
     selectedToDate,
     supabase,
     classNameById,
+    totalWeeksForYear,
   ]);
 
   const handleExportImage = useCallback(

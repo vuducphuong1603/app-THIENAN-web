@@ -88,7 +88,7 @@ function ensureSnapshotTokens(snapshot: SessionSnapshot): SessionSnapshot {
 }
 
 function isTerminalSignOut(event: AuthChangeEvent) {
-  return event === "SIGNED_OUT" || event === "USER_DELETED";
+  return event === "SIGNED_OUT" || (event as string) === "USER_DELETED";
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

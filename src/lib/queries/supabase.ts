@@ -552,7 +552,7 @@ export async function fetchStudentsByClass(
 
     if (!error) {
       studentOptionalColumnsAvailability = { ...availability };
-      return (data as StudentBasicRow[] | null) ?? [];
+      return (data as unknown as StudentBasicRow[] | null) ?? [];
     }
 
     if (!isIgnorableSupabaseError(error)) {
@@ -614,7 +614,7 @@ export async function fetchStudentScoreDetails(
 
       if (!error) {
         if (Array.isArray(data)) {
-          results.push(...(data as StudentScoreDetailRow[]));
+          results.push(...(data as unknown as StudentScoreDetailRow[]));
         }
         break;
       }
