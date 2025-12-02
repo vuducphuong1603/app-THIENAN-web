@@ -12,11 +12,11 @@ interface AppShellProps {
 
 export function AppShell({ children, sections, userName, roleLabel, onSignOut }: AppShellProps) {
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex min-h-screen">
       <Sidebar sections={sections} />
       <div className="flex flex-1 flex-col">
         <Topbar title="Giáo Xứ Thiên Ân" userName={userName} roleLabel={roleLabel} onSignOut={onSignOut} />
-        <main className="flex-1 overflow-y-auto bg-slate-50 p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
       </div>
     </div>
   );

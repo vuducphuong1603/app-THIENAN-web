@@ -1,0 +1,531 @@
+# Design System Rules for Figma Integration
+
+This document provides comprehensive rules for integrating Figma designs with the app-THIENAN-web codebase using the Model Context Protocol.
+
+---
+
+## 1. Token Definitions
+
+### Color Tokens
+
+The project uses Tailwind CSS v4 with inline color definitions. Map Figma colors to these Tailwind classes:
+
+| Purpose | Tailwind Color | Hex Value |
+|---------|----------------|-----------|
+| Primary | `emerald-600` | `#059669` |
+| Primary Hover | `emerald-700` | `#047857` |
+| Secondary | `slate-600` | `#475569` |
+| Secondary Hover | `slate-700` | `#334155` |
+| Danger | `red-600` | `#dc2626` |
+| Danger Hover | `red-700` | `#b91c1c` |
+| Background | `white` / `slate-50` | `#ffffff` / `#f8fafc` |
+| Text Primary | `slate-900` | `#0f172a` |
+| Text Secondary | `slate-600` | `#475569` |
+| Text Muted | `slate-500` | `#64748b` |
+| Border | `slate-200` / `slate-300` | `#e2e8f0` / `#cbd5e1` |
+| Accent Blue | `blue-700` | `#1d4ed8` |
+| Accent Amber | `amber-700` | `#b45309` |
+| Accent Rose | `rose-700` | `#be123c` |
+
+### CSS Variables (globals.css)
+
+```css
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+```
+
+### Typography Scale
+
+| Size Name | Tailwind Class | Use Case |
+|-----------|----------------|----------|
+| xs | `text-xs` | Helper text, badges |
+| sm | `text-sm` | Body text, inputs |
+| base | `text-base` | Standard text |
+| lg | `text-lg` | Subheadings |
+| 2xl | `text-2xl` | Page titles |
+
+**Font Weights**: `font-medium`, `font-semibold`, `font-bold`
+
+**Font Family**:
+- Sans: `--font-geist-sans`
+- Mono: `--font-geist-mono`
+- Fallback: Arial, Helvetica
+
+### Spacing Scale
+
+Standard Tailwind spacing tokens (in 0.25rem increments):
+- `1` = 0.25rem (4px)
+- `2` = 0.5rem (8px)
+- `3` = 0.75rem (12px)
+- `4` = 1rem (16px)
+- `6` = 1.5rem (24px)
+- `8` = 2rem (32px)
+
+---
+
+## 2. Component Library
+
+### Location
+All UI components are in `/src/components/ui/`
+
+### Component Architecture Pattern
+
+```typescript
+// Standard component structure
+interface ComponentProps extends HTMLAttributes<HTMLElement> {
+  variant?: "primary" | "secondary" | "outline" | "danger" | "ghost";
+  size?: "sm" | "md" | "lg";
+  children: ReactNode;
+  fullWidth?: boolean;
+}
+
+// Use clsx for conditional class merging
+import clsx from "clsx";
+
+className={clsx(
+  baseClasses,
+  variantClasses[variant],
+  sizeClasses[size],
+  fullWidth && "w-full",
+  props.disabled && "opacity-50 cursor-not-allowed",
+  className,
+)}
+```
+
+### Available Components
+
+| Component | File | Variants |
+|-----------|------|----------|
+| Button | `button.tsx` | primary, secondary, outline, danger, ghost |
+| Card | `card.tsx` | - |
+| CardHeader | `card.tsx` | - |
+| StatsCard | `card.tsx` | emerald, blue, amber, rose |
+| Input | `input.tsx` | - |
+| Select | `select.tsx` | - |
+| Modal | `modal.tsx` | sm, md, lg, xl |
+| Skeleton | `skeleton.tsx` | text, circular, rectangular |
+
+### Button Component Reference
+
+```typescript
+// File: /src/components/ui/button.tsx
+const variantClasses = {
+  primary: "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500",
+  secondary: "bg-slate-600 text-white hover:bg-slate-700 focus:ring-slate-500",
+  outline: "border border-slate-300 text-slate-700 hover:bg-slate-50 focus:ring-slate-500",
+  danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
+  ghost: "text-slate-600 hover:bg-slate-100 focus:ring-slate-500",
+};
+
+const sizeClasses = {
+  sm: "px-3 py-1.5 text-xs",
+  md: "px-4 py-2 text-sm",
+  lg: "px-6 py-3 text-base",
+};
+```
+
+### Card Component Reference
+
+```typescript
+// File: /src/components/ui/card.tsx
+// Base Card: rounded-xl border border-slate-200 bg-white p-4 shadow-sm
+
+// StatsCard colors
+const colorClasses = {
+  emerald: "text-emerald-700",
+  blue: "text-blue-700",
+  amber: "text-amber-700",
+  rose: "text-rose-700",
+};
+```
+
+### Modal Size Reference
+
+```typescript
+// File: /src/components/ui/modal.tsx
+const sizeClasses = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-lg",
+  xl: "max-w-xl",
+};
+```
+
+---
+
+## 3. Frameworks & Libraries
+
+### Core Stack
+- **Framework**: Next.js 15.5.4 (App Router)
+- **React**: 19.1.0
+- **TypeScript**: 5.x (strict mode)
+- **Styling**: Tailwind CSS v4
+
+### Key Dependencies
+- **State Management**: @tanstack/react-query v5.90.2
+- **Forms**: react-hook-form v7.64.0 + zod v4.1.12
+- **Icons**: lucide-react v0.545.0
+- **Backend**: @supabase/supabase-js v2.74.0
+- **Charts**: recharts v3.2.1
+- **Utilities**: date-fns v4.1.0, clsx v2.1.1, tailwind-merge v3.3.1
+
+---
+
+## 4. Asset Management
+
+### Asset Location
+Static assets are stored in `/public/`
+
+```
+public/
+├── church-logo.jpg    # Organization logo
+├── tntt-logo.png      # TNTT logo
+├── favicon.ico        # Browser favicon
+└── *.svg              # Vector icons
+```
+
+### Image Usage Pattern
+
+```tsx
+import Image from "next/image";
+
+<Image
+  src="/church-logo.jpg"
+  alt="Church Logo"
+  width={200}
+  height={200}
+  priority // for above-fold images
+/>
+```
+
+### Asset Optimization
+- Next.js Image component handles automatic optimization
+- SVGs are inlined or used via Lucide React
+
+---
+
+## 5. Icon System
+
+### Icon Library
+**Lucide React** (lucide-react v0.545.0)
+
+### Standard Icon Sizes
+
+| Size | Class | Use Case |
+|------|-------|----------|
+| 16px | `h-4 w-4` | Buttons, inline icons |
+| 20px | `h-5 w-5` | Modal close, larger buttons |
+| 24px | `h-6 w-6` | Navigation, emphasis |
+
+### Usage Pattern
+
+```tsx
+import { Plus, Search, Trash2, Users, Eye, Loader2, AlertTriangle, X, LogOut, Edit, Save, Upload, UserPlus, CheckCircle2, CalendarClock, RefreshCcw } from "lucide-react";
+
+// In JSX
+<Plus className="h-4 w-4" />
+<Loader2 className="h-4 w-4 animate-spin" /> // For loading states
+```
+
+### Common Icons Used
+
+| Icon | Purpose |
+|------|---------|
+| `Plus` | Add new item |
+| `Search` | Search functionality |
+| `Trash2` | Delete action |
+| `Edit` | Edit action |
+| `Save` | Save action |
+| `Eye` | View action |
+| `Users` | User/group related |
+| `X` | Close, dismiss |
+| `Loader2` | Loading spinner (with `animate-spin`) |
+| `AlertTriangle` | Warning, error states |
+| `CheckCircle2` | Success states |
+| `LogOut` | Sign out |
+| `Upload` | Upload action |
+| `CalendarClock` | Schedule/time related |
+| `RefreshCcw` | Refresh/reload |
+
+---
+
+## 6. Styling Approach
+
+### Methodology
+Pure Tailwind CSS v4 with utility-first approach
+
+### Configuration
+
+**PostCSS** (`postcss.config.mjs`):
+```javascript
+const config = {
+  plugins: ["@tailwindcss/postcss"],
+};
+```
+
+**Global Styles** (`src/app/globals.css`):
+```css
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+```
+
+### Class Merging Pattern
+
+```tsx
+import clsx from "clsx";
+
+// Conditional classes
+className={clsx(
+  "base-classes",
+  condition && "conditional-class",
+  props.className,
+)}
+```
+
+### Common Class Patterns
+
+**Card/Container**:
+```
+rounded-xl border border-slate-200 bg-white p-4 shadow-sm
+```
+
+**Input**:
+```
+w-full rounded-lg border border-slate-300 px-4 py-2 text-sm
+focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20
+```
+
+**Table Header**:
+```
+bg-slate-50 text-left text-xs font-semibold uppercase text-slate-600
+```
+
+**Table Row Hover**:
+```
+hover:bg-slate-50 transition-colors
+```
+
+### Responsive Breakpoints
+Standard Tailwind breakpoints:
+- `sm`: 640px
+- `md`: 768px
+- `lg`: 1024px
+- `xl`: 1280px
+
+---
+
+## 7. Project Structure
+
+```
+src/
+├── app/                              # Next.js 15 app directory
+│   ├── (authenticated)/              # Protected routes
+│   │   ├── dashboard/
+│   │   ├── classes/
+│   │   ├── students/
+│   │   ├── users/
+│   │   ├── reports/
+│   │   ├── performance/
+│   │   ├── settings/
+│   │   └── layout.tsx
+│   ├── (auth)/                       # Auth routes
+│   │   └── login/
+│   ├── api/                          # API routes
+│   ├── globals.css
+│   ├── layout.tsx                    # Root layout
+│   └── page.tsx
+├── components/
+│   ├── ui/                           # Base UI components
+│   ├── layout/                       # Layout components
+│   └── navigation/                   # Navigation components
+├── lib/
+│   ├── actions/                      # Server actions
+│   ├── auth/
+│   ├── calculations/
+│   ├── queries/                      # React Query hooks
+│   └── supabase/
+├── providers/
+│   ├── auth-provider.tsx
+│   ├── query-provider.tsx
+│   └── navigation-guard.tsx
+└── types/
+    ├── auth.ts
+    └── database.ts
+```
+
+### Path Aliases
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
+}
+```
+
+**Usage**:
+```tsx
+import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
+```
+
+---
+
+## 8. Figma to Code Mapping Rules
+
+### Color Mapping
+
+When receiving colors from Figma:
+
+1. **Match to existing Tailwind colors first**
+2. **Primary actions**: Map to `emerald-600`
+3. **Secondary actions**: Map to `slate-600`
+4. **Destructive actions**: Map to `red-600`
+5. **Info/neutral**: Map to `blue-600`
+6. **Warning**: Map to `amber-600`
+
+### Component Mapping
+
+| Figma Element | Code Component |
+|---------------|----------------|
+| Filled button | `<Button variant="primary">` |
+| Outlined button | `<Button variant="outline">` |
+| Ghost button | `<Button variant="ghost">` |
+| Card container | `<Card>` |
+| Form input | `<Input>` |
+| Dropdown | `<Select>` |
+| Dialog/Modal | `<Modal>` |
+| Loading state | `<Skeleton>` |
+
+### Size Mapping
+
+| Figma Size | Code Size | Button Padding |
+|------------|-----------|----------------|
+| Small | `size="sm"` | `px-3 py-1.5` |
+| Medium | `size="md"` | `px-4 py-2` |
+| Large | `size="lg"` | `px-6 py-3` |
+
+### Spacing Mapping
+
+Convert Figma spacing to Tailwind tokens:
+- 4px → `1`
+- 8px → `2`
+- 12px → `3`
+- 16px → `4`
+- 24px → `6`
+- 32px → `8`
+
+### Border Radius Mapping
+
+| Figma Value | Tailwind Class |
+|-------------|----------------|
+| 4px | `rounded` |
+| 8px | `rounded-lg` |
+| 12px | `rounded-xl` |
+| Full | `rounded-full` |
+
+---
+
+## 9. Implementation Guidelines
+
+### Creating New Components
+
+1. Place in appropriate folder under `/src/components/`
+2. Use TypeScript with proper interface definitions
+3. Extend HTML element attributes when appropriate
+4. Use `clsx` for conditional classes
+5. Support `className` prop for customization
+6. Use consistent variant naming: `primary`, `secondary`, `outline`, `danger`, `ghost`
+7. Use consistent size naming: `sm`, `md`, `lg`
+
+### Adding Icons
+
+1. Check if icon exists in Lucide React
+2. Import from `lucide-react`
+3. Use standard sizes: `h-4 w-4`, `h-5 w-5`, or `h-6 w-6`
+4. Add `animate-spin` for loading spinners
+
+### Adding New Colors
+
+1. Use existing Tailwind color palette when possible
+2. For custom colors, add to `globals.css` as CSS variables
+3. Reference in `@theme inline` block
+
+### Form Components
+
+1. Use `react-hook-form` for form state
+2. Use `zod` for validation schemas
+3. Use `Input` and `Select` components from `/src/components/ui/`
+4. Display errors with `text-red-500 text-sm`
+
+---
+
+## 10. Quick Reference
+
+### Common Class Combinations
+
+**Page Container**:
+```
+min-h-screen bg-slate-50 p-6
+```
+
+**Section Title**:
+```
+text-2xl font-bold text-slate-900
+```
+
+**Form Label**:
+```
+text-sm font-medium text-slate-700
+```
+
+**Error Text**:
+```
+text-sm text-red-500
+```
+
+**Helper Text**:
+```
+text-xs text-slate-500
+```
+
+**Badge**:
+```
+inline-flex items-center rounded-full px-2 py-1 text-xs font-medium
+```
+
+**Table Cell**:
+```
+px-4 py-3 text-sm text-slate-700
+```
+
+**Divider**:
+```
+border-t border-slate-200
+```
+
+### Interactive States
+
+Always include:
+- `hover:` for hover states
+- `focus:` or `focus-visible:` for focus states
+- `disabled:opacity-50 disabled:cursor-not-allowed` for disabled states
+- `transition-colors` for smooth color transitions
