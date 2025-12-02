@@ -11,6 +11,8 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-manrope: var(--font-manrope);
+  --font-outfit: var(--font-outfit);
+  --font-inter-tight: var(--font-inter-tight);
 }
 
 @media (prefers-color-scheme: dark) {

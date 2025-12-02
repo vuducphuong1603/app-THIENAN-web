@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Manrope } from "next/font/google";
+import { Geist, Geist_Mono, Manrope, Outfit, Inter_Tight } from "next/font/google";
 import Image from "next/image";
 import "./globals.css";
 
@@ -22,6 +22,16 @@ const manrope = Manrope({
   subsets: ["latin", "vietnamese"],
 });
 
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+});
+
+const interTight = Inter_Tight({
+  variable: "--font-inter-tight",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
   title: "Thiếu Nhi Thiên Ân",
   description: "Hệ thống quản lý giáo lý viên và thiếu nhi Giáo xứ Thiên Ân",
@@ -34,7 +44,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
-      <body className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} antialiased text-slate-900`}>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${outfit.variable} ${interTight.variable} antialiased text-slate-900`}>
         {/* Global Background Image */}
         <Image
           src="/auth-background.png"
