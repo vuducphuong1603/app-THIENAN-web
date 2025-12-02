@@ -1,0 +1,23 @@
+
+> thieunhi-web@0.1.0 lint
+> eslint
+
+
+/home/phuong/Projects/thieunhi-web/src/app/(authenticated)/students/page.tsx
+  211:10  warning  'selectedStudent' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/phuong/Projects/thieunhi-web/src/app/(authenticated)/users/page.tsx
+  346:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/home/phuong/Projects/thieunhi-web/src/lib/actions/users.ts
+   72:9   error  'teachersMap' is never reassigned. Use 'const' instead  prefer-const
+   93:36  error  Unexpected any. Specify a different type                @typescript-eslint/no-explicit-any
+  325:23  error  Unexpected any. Specify a different type                @typescript-eslint/no-explicit-any
+  359:28  error  Unexpected any. Specify a different type                @typescript-eslint/no-explicit-any
+
+/home/phuong/Projects/thieunhi-web/src/lib/auth/profile-role.ts
+  13:6  warning  'TeacherRoleRow' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 7 problems (5 errors, 2 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+

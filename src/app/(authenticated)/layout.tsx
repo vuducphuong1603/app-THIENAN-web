@@ -3,16 +3,10 @@ import type { ReactNode } from "react";
 
 import { ProtectedLayoutClient } from "@/components/layout/protected-layout-client";
 import type { NavSection } from "@/components/navigation/types";
+import { getRoleLabel } from "@/lib/auth/roles";
+import { resolveProfileRole } from "@/lib/auth/profile-role";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole, Profile } from "@/types/auth";
-
-function mapRole(role?: string | null): AppRole {
-  return role === "admin" ? "admin" : "catechist";
-}
-
-function roleLabel(role: AppRole) {
-  return role === "admin" ? "Ban điều hành" : "Giáo lý viên";
-}
 
 function buildSections(role: AppRole): NavSection[] {
   if (role === "admin") {
@@ -43,6 +37,31 @@ function buildSections(role: AppRole): NavSection[] {
     ];
   }
 
+  if (role === "sector_leader") {
+    return [
+      {
+        label: "Tổng quan",
+        items: [{ label: "Dashboard", href: "/dashboard" }],
+      },
+      {
+        label: "Quản lý",
+        items: [
+          { label: "Lớp học", href: "/classes" },
+          { label: "Thiếu nhi", href: "/students" },
+        ],
+      },
+      {
+        label: "Hoạt động",
+        items: [{ label: "Báo cáo", href: "/reports" }],
+      },
+      {
+        label: "Hệ thống",
+        items: [{ label: "Cài đặt", href: "/settings" }],
+      },
+    ];
+  }
+
+  // catechist role
   return [
     {
       label: "Tổng quan",
@@ -67,8 +86,8 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
-    .from("profiles")
-    .select("id, username, role, full_name, sector, class_name")
+    .from("user_profiles")
+    .select("id, email, phone, role, full_name, saint_name")
     .eq("id", userId)
     .maybeSingle();
 
@@ -79,13 +98,20 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 
   if (!data) return null;
 
+  const resolvedRole = await resolveProfileRole(supabase, {
+    id: data.id,
+    email: data.email,
+    phone: data.phone,
+    role: data.role,
+  });
+
   return {
     id: data.id,
-    username: data.username,
-    role: mapRole(data.role),
-    fullName: data.full_name,
-    sector: data.sector,
-    className: data.class_name,
+    username: data.email ?? "",
+    role: resolvedRole,
+    fullName: data.full_name ?? `${data.saint_name ?? ""}`.trim(),
+    sector: null, // user_profiles doesn't have sector
+    className: null, // user_profiles doesn't have class_name
   } satisfies Profile;
 }
 
@@ -97,29 +123,34 @@ export default async function AuthenticatedLayout({
   const supabase = await createSupabaseServerClient();
 
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
-  if (!session?.user) {
+  if (error) {
+    console.warn("Failed to verify user session", error);
+  }
+
+  if (!user) {
     redirect("/login");
   }
 
-  const profile = await fetchProfile(session.user.id);
+  const profile = await fetchProfile(user.id);
 
   const resolvedProfile =
     profile ??
     ({
-      id: session.user.id,
-      username: session.user.email ?? "",
+      id: user.id,
+      username: user.email ?? "",
       role: "catechist",
-      fullName: session.user.user_metadata?.full_name ?? "",
+      fullName: user.user_metadata?.full_name ?? "",
     } satisfies Profile);
 
   return (
     <ProtectedLayoutClient
       sections={buildSections(resolvedProfile.role)}
       userName={resolvedProfile.fullName || resolvedProfile.username}
-      roleLabel={roleLabel(resolvedProfile.role)}
+      roleLabel={getRoleLabel(resolvedProfile.role)}
     >
       {children}
     </ProtectedLayoutClient>

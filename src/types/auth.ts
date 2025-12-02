@@ -1,4 +1,4 @@
-export type AppRole = "admin" | "catechist";
+export type AppRole = "admin" | "sector_leader" | "catechist";
 
 export type Profile = {
   id: string;
@@ -9,10 +9,16 @@ export type Profile = {
   className?: string | null;
 };
 
+export type SessionSnapshot = {
+  userId: string;
+  profile: Profile;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+};
+
 export type SessionState = {
   isLoading: boolean;
-  session?: {
-    userId: string;
-    profile: Profile;
-  } | null;
+  isAuthenticated: boolean;
+  session: SessionSnapshot | null;
 };
