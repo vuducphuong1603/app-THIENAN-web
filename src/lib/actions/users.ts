@@ -246,10 +246,10 @@ async function fetchTeacherInfoMap(
   }
 
   // Transform kết quả join thành format cũ
-  const transformedClasses = (classRows ?? []).map((cls: { id: string; name?: string | null; sectors?: { code?: string | null } | null }) => ({
-    id: cls.id,
-    name: cls.name,
-    sector: cls.sectors?.code ?? null,
+  const transformedClasses = (classRows ?? []).map((cls) => ({
+    id: cls.id as string,
+    name: cls.name as string | null,
+    sector: (cls.sectors?.[0]?.code as string | null) ?? null,
   }));
 
   const classLookup = buildClassLookup(transformedClasses);
