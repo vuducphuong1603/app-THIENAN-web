@@ -1,8 +1,15 @@
 {
 	"servers": {
 		"supabase": {
-			"type": "http",
-			"url": "https://mcp.supabase.com/mcp?project_ref=zsvisvrmfssxkytuiuun"
+			"command": "npx",
+			"args": [
+				"-y",
+				"@supabase/mcp-server-supabase@latest",
+				"--project-ref",
+				"zsvisvrmfssxkytuiuun",
+				"--access-token",
+				"sbp_37a88232350f141bbd792a5518bf142ee19ede03"
+			]
 		}
 	},
 	"inputs": []
