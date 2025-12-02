@@ -10,6 +10,14 @@
         "--access-token",
         "sbp_37a88232350f141bbd792a5518bf142ee19ede03"
       ]
+    },
+    "figma": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "figma-developer-mcp",
+        "--figma-api-key=figd_6hAUFOwvoZ87zsiEh2e2UsUBam2U3NSnH7oJChtV"
+      ]
     }
   }
 }

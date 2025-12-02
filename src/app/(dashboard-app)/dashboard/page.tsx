@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { StatCard, AttendanceWidget, SectorStatsWidget, AlertsWidget, WeeklyPlanWidget, NotesWidget } from "@/components/dashboard";
 import { resolveUserScope } from "@/lib/auth/user-scope";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { AppRole } from "@/types/auth";
@@ -118,10 +119,10 @@ const SUMMARY_CARD_LINKS: Record<AppRole, SummaryCardLinks> = {
 };
 
 const DEFAULT_SECTOR_IDENTIFIERS: SectorIdentifier[] = [
-  { key: "CHIEN", label: "Chiên", order: 0 },
-  { key: "AU", label: "Ấu", order: 1 },
-  { key: "THIEU", label: "Thiếu", order: 2 },
-  { key: "NGHIA", label: "Nghĩa", order: 3 },
+  { key: "CHIEN", label: "Chiên con", order: 0 },
+  { key: "AU", label: "Ấu nhi", order: 1 },
+  { key: "THIEU", label: "Thiếu nhi", order: 2 },
+  { key: "NGHIA", label: "Nghĩa sĩ", order: 3 },
 ];
 
 const KNOWN_SECTOR_KEYS = new Set(DEFAULT_SECTOR_IDENTIFIERS.map((identifier) => identifier.key));
@@ -147,16 +148,16 @@ function resolveSectorIdentifier(
     if (!normalized) continue;
 
     if (normalized.includes("CHIEN")) {
-      return { key: "CHIEN", label: "Chiên", order: 0 };
+      return { key: "CHIEN", label: "Chiên con", order: 0 };
     }
     if (normalized.includes("NGHIA")) {
-      return { key: "NGHIA", label: "Nghĩa", order: 3 };
+      return { key: "NGHIA", label: "Nghĩa sĩ", order: 3 };
     }
     if (normalized.includes("THIEU")) {
-      return { key: "THIEU", label: "Thiếu", order: 2 };
+      return { key: "THIEU", label: "Thiếu nhi", order: 2 };
     }
     if (normalized.includes("AU")) {
-      return { key: "AU", label: "Ấu", order: 1 };
+      return { key: "AU", label: "Ấu nhi", order: 1 };
     }
 
     if (!fallback) {
@@ -324,9 +325,34 @@ async function fetchRecentAttendanceRecords(
   return allRows;
 }
 
+// Get Vietnamese day of week
+function getVietnameseWeekday(date: Date): string {
+  const days = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
+  return days[date.getDay()];
+}
+
+// Get Vietnamese month name
+function getVietnameseMonth(date: Date): string {
+  const months = [
+    "Tháng Một", "Tháng Hai", "Tháng Ba", "Tháng Tư", "Tháng Năm", "Tháng Sáu",
+    "Tháng Bảy", "Tháng Tám", "Tháng Chín", "Tháng Mười", "Tháng Mười Một", "Tháng Mười Hai"
+  ];
+  return months[date.getMonth()];
+}
+
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   const userScopePromise = resolveUserScope(supabase);
+
+  // Get current user profile for greeting
+  const { data: { user } } = await supabase.auth.getUser();
+  const userProfile = user ? await supabase
+    .from("user_profiles")
+    .select("full_name, saint_name")
+    .eq("id", user.id)
+    .maybeSingle() : null;
+
+  const userName = userProfile?.data?.full_name || userProfile?.data?.saint_name || "Người dùng";
 
   const [
     summaryResult,
@@ -361,34 +387,20 @@ export default async function DashboardPage() {
     currentAcademicYearResult.error || !currentAcademicYearResult.data
       ? null
       : ((currentAcademicYearResult.data as Partial<AcademicYear>) ?? null);
-  if (currentAcademicYearResult.error) {
-    console.warn(
-      "Dashboard academic year query fallback:",
-      currentAcademicYearResult.error.message ?? currentAcademicYearResult.error,
-    );
-  }
+
   const sectorRows = sectorsResult.error
     ? []
     : ((sectorsResult.data as SectorRow[] | null | undefined) ?? []);
-  if (sectorsResult.error) {
-    console.warn("Dashboard sectors query fallback:", sectorsResult.error.message ?? sectorsResult.error);
-  }
 
   const classRows = classesResult.error
     ? []
     : ((classesResult.data as ClassRow[] | null | undefined) ?? []);
-  if (classesResult.error) {
-    console.warn("Dashboard classes query fallback:", classesResult.error.message ?? classesResult.error);
-  }
 
   const studentRows = await fetchAllStudents(supabase);
 
   const teacherRows = teachersResult.error
     ? []
     : ((teachersResult.data as TeacherRow[] | null | undefined) ?? []);
-  if (teachersResult.error) {
-    console.warn("Dashboard teacher query fallback:", teachersResult.error.message ?? teachersResult.error);
-  }
 
   const sectorMeta = new Map<string, SectorMeta>();
   const sectorAccumulators = new Map<string, SectorAccumulator>();
@@ -435,23 +447,15 @@ export default async function DashboardPage() {
   });
 
   studentRows.forEach((student) => {
-    if (!student) {
-      return;
-    }
+    if (!student) return;
     const classId = sanitizeClassId(student.class_id);
-    if (!classId) {
-      return;
-    }
+    if (!classId) return;
     const sectorKey = classIdToSectorKey.get(normalizeClassId(classId));
-    if (!sectorKey) {
-      return;
-    }
+    if (!sectorKey) return;
 
     registerSector(sectorMeta, sectorAccumulators, sectorKey);
     const accumulator = sectorAccumulators.get(sectorKey);
-    if (!accumulator) {
-      return;
-    }
+    if (!accumulator) return;
 
     accumulator.total_students += 1;
 
@@ -487,16 +491,11 @@ export default async function DashboardPage() {
     const recognizedIdentifier =
       identifier && KNOWN_SECTOR_KEYS.has(identifier.key) ? identifier : null;
     const sectorKey = ensureSectorFromIdentifier(sectorMeta, sectorAccumulators, recognizedIdentifier);
-    if (!sectorKey) {
-      return;
-    }
+    if (!sectorKey) return;
 
     registerSector(sectorMeta, sectorAccumulators, sectorKey);
-
     const accumulator = sectorAccumulators.get(sectorKey);
-    if (!accumulator) {
-      return;
-    }
+    if (!accumulator) return;
 
     let teacherIds = teacherIdsBySector.get(sectorKey);
     if (!teacherIds) {
@@ -527,9 +526,7 @@ export default async function DashboardPage() {
   const attendanceByDate = new Map<string, AttendanceDailyAccumulator>();
 
   attendanceRecords.forEach((record) => {
-    if (!record?.event_date) {
-      return;
-    }
+    if (!record?.event_date) return;
     const weekday = (record.weekday ?? "").trim() || "Khác";
     const key = `${weekday}|${record.event_date}`;
     let accumulator = attendanceByDate.get(key);
@@ -619,56 +616,13 @@ export default async function DashboardPage() {
 
   const resolvedSummary: SummaryMetrics = {
     ...baseSummary,
-    sectors: resolveCount(
-      sectorsCountResult,
-      baseSummary.sectors,
-      "sector",
-    ),
-    classes: resolveCount(
-      classesCountResult,
-      baseSummary.classes,
-      "class",
-    ),
-    students: resolveCount(
-      studentsCountResult,
-      baseSummary.students,
-      "student",
-    ),
-    teachers: resolveCount(
-      usersCountResult,
-      baseSummary.teachers,
-      "user",
-    ),
+    sectors: resolveCount(sectorsCountResult, baseSummary.sectors, "sector"),
+    classes: resolveCount(classesCountResult, baseSummary.classes, "class"),
+    students: resolveCount(studentsCountResult, baseSummary.students, "student"),
+    teachers: resolveCount(usersCountResult, baseSummary.teachers, "user"),
   };
 
   const cardLinks = SUMMARY_CARD_LINKS[currentRole] ?? SUMMARY_CARD_LINKS.catechist;
-
-  const summaryCards: Array<{ label: string; value: number; href?: string }> = [
-    {
-      label: "Tổng số ngành",
-      value: resolvedSummary.sectors,
-    },
-    {
-      label: "Tổng số lớp",
-      value: resolvedSummary.classes,
-      href: cardLinks.classes,
-    },
-    {
-      label: "Tổng thiếu nhi",
-      value: resolvedSummary.students,
-      href: cardLinks.students,
-    },
-    {
-      label: "Giáo lý viên",
-      value: resolvedSummary.teachers,
-      href: cardLinks.teachers,
-    },
-  ];
-
-  const baseCardClasses =
-    "block rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition";
-  const interactiveCardClasses =
-    "hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-400";
 
   const totalStudentsCount = Math.max(resolvedSummary.students, 0);
 
@@ -710,113 +664,190 @@ export default async function DashboardPage() {
     };
   });
 
-  const knownSessions = new Set(DEFAULT_ATTENDANCE_SESSIONS);
+  // Current date info
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  const weekdayName = getVietnameseWeekday(now);
+  const monthName = getVietnameseMonth(now);
 
-  const additionalAttendance = Array.from(attendanceSummaryByWeekday.values())
-    .filter((summary) => !knownSessions.has(summary.weekday))
-    .sort((a, b) => {
-      if (a.eventDate === b.eventDate) {
-        return a.weekday.localeCompare(b.weekday);
-      }
-      return b.eventDate.localeCompare(a.eventDate);
-    })
-    .map((summary) => ({
-      session: summary.weekday,
-      present: summary.present,
-      pending: Math.max(totalStudentsCount - summary.present, 0),
-    }));
+  // Icons for stat cards
+  const SectorsIcon = (
+    <svg className="size-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+    </svg>
+  );
 
-  const attendance = [...orderedAttendance, ...additionalAttendance];
+  const ClassesIcon = (
+    <svg className="size-5 text-black/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+    </svg>
+  );
+
+  const StudentsIcon = (
+    <svg className="size-5 text-black/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+    </svg>
+  );
+
+  const TeachersIcon = (
+    <svg className="size-4 text-black/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  );
+
+  // Sample alerts (in a real app, these would come from the database)
+  const alerts = [
+    {
+      id: "1",
+      title: "Báo cáo tuần 2 đã sẵn sàng",
+      time: "2 giờ trước",
+      source: "System",
+      priority: "low" as const,
+      processed: false,
+    },
+    {
+      id: "2",
+      title: "Báo cáo tuần 1 đã sẵn sàng",
+      time: "2 tuần trước",
+      source: "System",
+      priority: "high" as const,
+      processed: true,
+    },
+  ];
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="space-y-6">
+      {/* Welcome Section */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-sm text-slate-500">Chào mừng,</p>
-          <h2 className="text-2xl font-semibold text-slate-900">Thiếu Nhi Thiên Ân!</h2>
+          <p className="font-manrope text-[22px] text-[#5b5a64]">Chúc ngày tốt lành</p>
+          <h1 className="font-manrope text-[42px] font-bold leading-tight tracking-tight text-black">
+            Chào mừng, {userName}!
+          </h1>
         </div>
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          <p>Năm học hiện tại: {resolvedSummary.academic_year}</p>
-          <p>Tổng số tuần: {resolvedSummary.total_weeks}</p>
+
+        {/* Date & Notifications */}
+        <div className="flex items-center gap-4">
+          {/* Date Circle */}
+          <div className="flex items-center gap-4">
+            <div className="flex size-[92px] items-center justify-center rounded-full border-4 border-[#fa865e]/20">
+              <span className="font-outfit text-[32px] text-black">{dayOfMonth}</span>
+            </div>
+            <div className="flex flex-col">
+              <span className="font-inter-tight text-base text-black">{weekdayName},</span>
+              <span className="font-inter-tight text-lg text-black">{monthName}</span>
+            </div>
+          </div>
+
+          {/* Separator */}
+          <div className="h-8 w-px bg-gray-300" />
+
+          {/* Notification Button */}
+          <Link
+            href="/reports"
+            className="rounded-full bg-[#fa865e] px-8 py-4 font-outfit text-base text-white transition hover:bg-[#e5764e]"
+          >
+            Xem thông báo
+          </Link>
+
+          {/* Calendar Icon */}
+          <button className="flex size-14 items-center justify-center rounded-full border border-gray-200 bg-white">
+            <svg className="size-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </button>
         </div>
       </div>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {summaryCards.map((card) => {
-          const cardClassName = card.href
-            ? `${baseCardClasses} ${interactiveCardClasses}`
-            : baseCardClasses;
-          const content = (
-            <>
-              <p className="text-sm text-slate-500">{card.label}</p>
-              <p className="mt-1 text-2xl font-bold text-emerald-700">{card.value}</p>
-            </>
-          );
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <StatCard
+          label="Tổng số ngành"
+          value={resolvedSummary.sectors}
+          variant="primary"
+          icon={SectorsIcon}
+        />
+        <StatCard
+          label="Tổng số lớp"
+          value={resolvedSummary.classes}
+          href={cardLinks.classes}
+          icon={ClassesIcon}
+        />
+        <StatCard
+          label="Tổng thiếu nhi"
+          value={resolvedSummary.students}
+          href={cardLinks.students}
+          icon={StudentsIcon}
+        />
+        <StatCard
+          label="Giáo lý viên"
+          value={resolvedSummary.teachers}
+          href={cardLinks.teachers}
+          icon={TeachersIcon}
+        />
+      </div>
 
-          if (card.href) {
-            return (
-              <Link key={card.label} href={card.href} className={cardClassName}>
-                {content}
-              </Link>
-            );
-          }
-
-          return (
-            <div key={card.label} className={cardClassName}>
-              {content}
-            </div>
-          );
-        })}
-      </section>
-
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-800">Thống kê theo ngành</h3>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {sectors.map((sector) => (
-            <div key={sector.sector} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <p className="text-base font-semibold text-slate-800">{sector.sector}</p>
-                <p className="text-xs text-slate-500">{sector.total_classes} lớp</p>
-              </div>
-              <div className="mt-2 space-y-1 text-sm text-slate-600">
-                <p>Số thiếu nhi: {sector.total_students}</p>
-                <p>Giáo lý viên: {sector.total_teachers}</p>
-              </div>
-              <div className="mt-3 space-y-1 text-xs text-slate-500">
-                <p>
-                  Điểm danh TB:
-                  <span className="font-semibold text-emerald-700">
-                    {" "}
-                    {sector.attendance_avg != null ? sector.attendance_avg : "-"}
-                  </span>
-                </p>
-                <p>
-                  Học tập TB:
-                  <span className="font-semibold text-emerald-700">
-                    {" "}
-                    {sector.study_avg != null ? sector.study_avg : "-"}
-                  </span>
-                </p>
-              </div>
-            </div>
-          ))}
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-12 gap-4">
+        {/* Left Column - Notes Widget */}
+        <div className="col-span-4">
+          <NotesWidget
+            classesTeaching={8}
+            studentsInClasses={240}
+            activitiesJoined="20/10"
+            activityLocation="Tại nhà thờ"
+            activityTime="14:00"
+            completionPercentage={65}
+            currentTask={{
+              title: "Dạy Giáo Lý",
+              time: "3:00",
+              location: "Lớp Ấu nhi",
+              room: "Phòng A2",
+              status: "in_progress",
+            }}
+          />
         </div>
-      </section>
 
-      <section className="space-y-4">
-        <h3 className="text-lg font-semibold text-slate-800">Điểm danh 7 ngày qua</h3>
-        <div className="grid gap-4 md:grid-cols-2">
-          {attendance.map((item) => (
-            <div key={item.session} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-base font-semibold text-slate-800">{item.session}</p>
-              <div className="mt-3 space-y-2 text-sm">
-                <p className="text-emerald-700">Có mặt: {item.present}</p>
-                <p className="text-slate-500">Chưa điểm danh: {item.pending}</p>
-              </div>
-            </div>
-          ))}
+        {/* Middle Column - Weekly Plan Widget */}
+        <div className="col-span-4">
+          <WeeklyPlanWidget
+            weekNumber={3}
+            activitiesCount={3}
+            progress={{
+              completed: 100,
+              inProgress: 50,
+              pending: 0,
+            }}
+          />
         </div>
-      </section>
+
+        {/* Right Column - Sector Stats Widget */}
+        <div className="col-span-4 row-span-2">
+          <SectorStatsWidget
+            sectors={sectors.map((s) => ({
+              sector: s.sector,
+              totalClasses: s.total_classes,
+              totalStudents: s.total_students,
+              totalTeachers: s.total_teachers,
+            }))}
+          />
+        </div>
+
+        {/* Attendance Widget */}
+        <div className="col-span-4">
+          <AttendanceWidget sessions={orderedAttendance} />
+        </div>
+
+        {/* Alerts Widget */}
+        <div className="col-span-4">
+          <AlertsWidget alerts={alerts} />
+        </div>
+      </div>
+
+      {/* Academic Year Info */}
+      <div className="rounded-lg border border-[#fa865e]/20 bg-[#fa865e]/5 px-4 py-3 text-sm text-[#fa865e]">
+        <p>Năm học hiện tại: {resolvedSummary.academic_year} | Tổng số tuần: {resolvedSummary.total_weeks}</p>
+      </div>
     </div>
   );
 }
