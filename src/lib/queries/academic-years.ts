@@ -211,9 +211,8 @@ export async function setCurrentAcademicYear(supabase: SupabaseClient, id: strin
     throw new Error("Thiếu mã năm học để kích hoạt.");
   }
 
-  // Ensure only one row is marked current; database trigger should handle this but we double-guard.
-  await supabase.from("academic_years").update({ is_current: false }).neq("id", id);
-
+  // Database trigger trg_ensure_single_current_academic_year tự động
+  // tắt is_current cho các năm học khác, chỉ cần 1 UPDATE
   const { data, error } = await supabase
     .from("academic_years")
     .update({ is_current: true })

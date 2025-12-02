@@ -236,17 +236,23 @@ async function fetchTeacherInfoMap(
     return map;
   }
 
+  // Join với bảng sectors để lấy sector code thay vì sector_id
   const { data: classRows, error: classesError } = await supabase
     .from("classes")
-    .select("id, name, sector");
+    .select("id, name, sectors(code)");
 
   if (classesError) {
     console.warn("Error fetching classes for teacher lookup:", classesError.message ?? classesError);
   }
 
-  const classLookup = buildClassLookup(
-    (classRows as Array<{ id: string; name?: string | null; sector?: string | null }> | null) ?? [],
-  );
+  // Transform kết quả join thành format cũ
+  const transformedClasses = (classRows ?? []).map((cls: { id: string; name?: string | null; sectors?: { code?: string | null } | null }) => ({
+    id: cls.id,
+    name: cls.name,
+    sector: cls.sectors?.code ?? null,
+  }));
+
+  const classLookup = buildClassLookup(transformedClasses);
 
   teacherRows.forEach((teacher) => {
     const phone = typeof teacher.phone === "string" ? teacher.phone.trim() : "";

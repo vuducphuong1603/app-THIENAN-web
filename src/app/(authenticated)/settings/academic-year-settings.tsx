@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import clsx from "clsx";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -125,7 +125,6 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
   const [formState, setFormState] = useState<FormState>(toFormState(null));
   const [formError, setFormError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const lastSubmittedForm = useRef<FormState | null>(null);
 
   const {
     data: academicYears = [],
@@ -148,6 +147,7 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
       return updateAcademicYear(supabase, id, payload);
     },
     onSuccess: (savedYear, variables) => {
+      // Cập nhật cache ngay lập tức
       queryClient.setQueryData<AcademicYear[]>(["academicYears"], (existing = []) => {
         if (!existing.length) {
           return [savedYear];
@@ -160,17 +160,9 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
         return existing.map((year) => (year.id === savedYear.id ? savedYear : year));
       });
 
-      // Trigger a background refresh but don't block the UI spinner on it.
+      // Background refresh
       void queryClient.invalidateQueries({ queryKey: ["academicYears"] });
-
-      setIsModalOpen(false);
-      setEditingYear(null);
-      setFormState(toFormState(null));
-      setFormError(null);
       setFeedback({ type: "success", message: "Đã lưu năm học thành công." });
-    },
-    onError: (mutationError) => {
-      setFormError(mutationError.message ?? "Không thể lưu năm học.");
     },
   });
 
@@ -225,9 +217,7 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
       is_current: formState.is_current,
     };
 
-    lastSubmittedForm.current = formState;
-    setIsModalOpen(false);
-
+    // Giữ modal mở trong khi mutation đang chạy, đóng khi thành công
     saveYear.mutate(
       {
         mode: editingYear ? "update" : "create",
@@ -235,13 +225,16 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
         id: editingYear?.id,
       },
       {
+        onSuccess: () => {
+          // Đóng modal chỉ khi thành công
+          setIsModalOpen(false);
+          setEditingYear(null);
+          setFormState(toFormState(null));
+          setFormError(null);
+        },
         onError: (mutationError) => {
+          // Giữ modal mở và hiển thị lỗi
           setFormError(mutationError.message ?? "Không thể lưu năm học.");
-          setFeedback({ type: "error", message: mutationError.message ?? "Không thể lưu năm học." });
-          setIsModalOpen(true);
-          if (lastSubmittedForm.current) {
-            setFormState(lastSubmittedForm.current);
-          }
         },
       },
     );
