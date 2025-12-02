@@ -1,12 +1,15 @@
 import StudentsPage from "./students-page-client";
 
 import {
+  fetchAttendanceRecordsForStudents,
   fetchClasses,
   fetchSectors,
   fetchStudents,
 } from "@/lib/queries/supabase";
+import { fetchAcademicYears } from "@/lib/queries/academic-years";
 import { resolveUserScope, normalizeClassId } from "@/lib/auth/user-scope";
-import type { ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
+import type { AttendanceRecordRow, ClassRow, SectorRow, StudentRow } from "@/lib/queries/supabase";
+import type { AcademicYear } from "@/types/database";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function resolveSettledValue<T>(result: PromiseSettledResult<T>, label: string): T | undefined {
@@ -32,19 +35,39 @@ export default async function StudentsPageRoute() {
     ? fetchStudents(supabase, classScopeId ? { classId: classScopeId } : undefined)
     : Promise.resolve([]);
 
-  const [sectorsResult, classesResult, studentsResult] = (await Promise.allSettled([
+  // Phase 1: Fetch independent data in parallel
+  const [sectorsResult, classesResult, studentsResult, academicYearsResult] = (await Promise.allSettled([
     fetchSectors(supabase),
     fetchClasses(supabase),
     studentsPromise,
+    fetchAcademicYears(supabase),
   ])) as [
     PromiseSettledResult<SectorRow[]>,
     PromiseSettledResult<ClassRow[]>,
     PromiseSettledResult<StudentRow[]>,
+    PromiseSettledResult<AcademicYear[]>,
   ];
 
   const initialSectors = resolveSettledValue(sectorsResult, "sectors");
   let initialClasses = resolveSettledValue(classesResult, "classes");
   const initialStudents = resolveSettledValue(studentsResult, "students");
+  const initialAcademicYears = resolveSettledValue(academicYearsResult, "academicYears");
+
+  // Phase 2: Fetch attendance records (depends on studentIds)
+  let initialAttendanceRecords: AttendanceRecordRow[] | undefined;
+  if (initialStudents && initialStudents.length > 0) {
+    const studentIds = initialStudents
+      .map((s) => s.id?.trim())
+      .filter((id): id is string => Boolean(id));
+
+    if (studentIds.length > 0) {
+      try {
+        initialAttendanceRecords = await fetchAttendanceRecordsForStudents(supabase, studentIds);
+      } catch (error) {
+        console.warn("Failed to prefetch attendance records on server", error);
+      }
+    }
+  }
 
   if (isCatechist) {
     if (hasAssignedClass && initialClasses) {
@@ -63,6 +86,8 @@ export default async function StudentsPageRoute() {
       initialSectors={initialSectors}
       initialClasses={initialClasses}
       initialStudents={initialStudents}
+      initialAttendanceRecords={initialAttendanceRecords}
+      initialAcademicYears={initialAcademicYears}
     />
   );
 }

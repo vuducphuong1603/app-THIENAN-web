@@ -10,7 +10,10 @@ export function QueryProvider({ children }: PropsWithChildren) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 1000 * 60,
+            staleTime: 1000 * 60 * 5, // 5 phút (giảm refetch không cần thiết)
+            gcTime: 1000 * 60 * 30, // 30 phút cache (giữ data trong memory lâu hơn)
+            refetchOnWindowFocus: false, // Không refetch khi đổi tab
+            refetchOnReconnect: false, // Không refetch khi reconnect network
             retry: 1,
           },
         },

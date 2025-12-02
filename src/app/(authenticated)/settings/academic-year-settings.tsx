@@ -134,6 +134,7 @@ export function AcademicYearSettings({ canEdit }: AcademicYearSettingsProps) {
   } = useQuery<AcademicYear[]>({
     queryKey: ["academicYears"],
     queryFn: () => fetchAcademicYears(supabase),
+    staleTime: 1000 * 60 * 30, // 30 phút - academic years hiếm khi thay đổi
   });
 
   const saveYear = useMutation<AcademicYear, Error, { mode: "create" | "update"; payload: AcademicYearInput; id?: string }>({

@@ -3,7 +3,19 @@
 import { Plus, Search, Trash2, Users, Eye, Loader2, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+// Custom hook for debouncing values - improves search performance
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
@@ -117,6 +129,7 @@ export default function ClassesPage({
     queryKey: ["classes", "list"],
     queryFn: () => fetchClasses(supabase),
     initialData: initialClasses,
+    staleTime: 1000 * 60 * 15, // 15 phút
   });
 
   const {
@@ -127,6 +140,7 @@ export default function ClassesPage({
     queryKey: ["sectors", "list"],
     queryFn: () => fetchSectors(supabase),
     initialData: initialSectors,
+    staleTime: 1000 * 60 * 30, // 30 phút - sectors hiếm khi thay đổi
   });
 
   const {
@@ -137,6 +151,7 @@ export default function ClassesPage({
     queryKey: ["teachers", "list"],
     queryFn: () => fetchTeachers(supabase),
     initialData: initialTeachers,
+    staleTime: 1000 * 60 * 15, // 15 phút
   });
 
   const {
@@ -147,6 +162,7 @@ export default function ClassesPage({
     queryKey: ["students", "classCounts"],
     queryFn: () => fetchStudentClassPairs(supabase),
     initialData: initialStudentClassPairs,
+    staleTime: 1000 * 60 * 10, // 10 phút
   });
 
   const { classes, availableTeachers } = useMemo(() => {
@@ -332,6 +348,7 @@ export default function ClassesPage({
   }, [teacherRows]);
 
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300); // Debounce 300ms
   const [sectorFilter, setSectorFilter] = useState("");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -356,11 +373,14 @@ export default function ClassesPage({
     (teachersError as Error | null) ||
     (studentsError as Error | null);
 
-  const filteredClasses = classes.filter((cls) => {
-    const matchesSearch = cls.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesSector = !sectorFilter || cls.sector === sectorFilter;
-    return matchesSearch && matchesSector;
-  });
+  const filteredClasses = useMemo(() => {
+    const lowerSearch = debouncedSearchTerm.toLowerCase();
+    return classes.filter((cls) => {
+      const matchesSearch = cls.name.toLowerCase().includes(lowerSearch);
+      const matchesSector = !sectorFilter || cls.sector === sectorFilter;
+      return matchesSearch && matchesSector;
+    });
+  }, [classes, debouncedSearchTerm, sectorFilter]);
 
   const groupedClasses = sectors.map((sector) => ({
     sector,

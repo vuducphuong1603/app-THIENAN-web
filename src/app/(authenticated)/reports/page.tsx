@@ -1389,6 +1389,7 @@ export default function ReportsPage() {
   } = useQuery<ClassRow[]>({
     queryKey: ["classes", "list"],
     queryFn: () => fetchClasses(supabase),
+    staleTime: 1000 * 60 * 15, // 15 phút
     enabled: !!supabase,
   });
 
@@ -1396,6 +1397,7 @@ export default function ReportsPage() {
   const { data: academicYears = [] } = useQuery({
     queryKey: ["academic-years"],
     queryFn: () => fetchAcademicYears(supabase),
+    staleTime: 1000 * 60 * 30, // 30 phút - academic years hiếm khi thay đổi
     enabled: !!supabase,
   });
 

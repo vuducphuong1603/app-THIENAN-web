@@ -599,53 +599,35 @@ export async function fetchStudentScoreDetails(
     return [];
   }
 
-  const results: StudentScoreDetailRow[] = [];
-  const initialAvailability = await ensureStudentScoreColumnsAvailability(supabase);
-  let availability: StudentScoreColumnsAvailability = { ...initialAvailability };
+  // Get column availability once before parallel fetches
+  const availability = await ensureStudentScoreColumnsAvailability(supabase);
+  const selectColumns = buildStudentScoreSelectColumns(availability);
 
+  // Tạo các chunks để query
+  const chunks: string[][] = [];
   for (let index = 0; index < trimmedIds.length; index += SUPABASE_IN_QUERY_CHUNK) {
-    const chunk = trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK);
-
-    let retry = 0;
-    while (true) {
-      const selectColumns = buildStudentScoreSelectColumns(availability);
-      const query = supabase.from("students").select(selectColumns).in("id", chunk);
-      const { data, error } = await query;
-
-      if (!error) {
-        if (Array.isArray(data)) {
-          results.push(...(data as unknown as StudentScoreDetailRow[]));
-        }
-        break;
-      }
-
-      if (!isIgnorableSupabaseError(error)) {
-        throw new Error(error.message);
-      }
-
-      if (error.code === "42703") {
-        const missingColumn = extractMissingColumnFromError(error);
-        if (missingColumn && isStudentScoreColumn(missingColumn) && availability[missingColumn]) {
-          availability = { ...availability, [missingColumn]: false };
-          studentScoreColumnsAvailability = {
-            ...(studentScoreColumnsAvailability ?? availability),
-            [missingColumn]: false,
-          };
-          retry += 1;
-          if (retry > STUDENT_SCORE_OPTIONAL_COLUMNS.length) {
-            console.warn("Supabase student score query fallback after removing missing columns:", error.message);
-            break;
-          }
-          continue;
-        }
-      }
-
-      console.warn("Supabase student score query fallback:", error.message);
-      break;
-    }
+    chunks.push(trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK));
   }
 
-  return results;
+  // Fetch chunk function với error handling
+  const fetchChunk = async (chunk: string[]): Promise<StudentScoreDetailRow[]> => {
+    const query = supabase.from("students").select(selectColumns).in("id", chunk);
+    const { data, error } = await query;
+
+    if (error) {
+      if (isIgnorableSupabaseError(error)) {
+        console.warn("Supabase student score query fallback:", error.message);
+        return [];
+      }
+      throw new Error(error.message);
+    }
+
+    return Array.isArray(data) ? (data as unknown as StudentScoreDetailRow[]) : [];
+  };
+
+  // Execute all chunks in parallel
+  const chunkResults = await Promise.all(chunks.map(fetchChunk));
+  return chunkResults.flat();
 }
 
 export type AttendanceRecordRow = {
@@ -675,11 +657,14 @@ export async function fetchAttendanceRecordsForStudents(
     return [];
   }
 
-  const results: AttendanceRecordRow[] = [];
-
+  // Tạo các chunks để query
+  const chunks: string[][] = [];
   for (let index = 0; index < trimmedIds.length; index += SUPABASE_IN_QUERY_CHUNK) {
-    const chunk = trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK);
+    chunks.push(trimmedIds.slice(index, index + SUPABASE_IN_QUERY_CHUNK));
+  }
 
+  // Fetch tất cả chunks song song (parallel) thay vì sequential
+  const fetchChunk = async (chunk: string[]): Promise<AttendanceRecordRow[]> => {
     let query = supabase
       .from("attendance_records")
       .select("student_id, event_date, status, weekday, student_class_id, student_class_name")
@@ -699,15 +684,15 @@ export async function fetchAttendanceRecordsForStudents(
     if (error) {
       if (isIgnorableSupabaseError(error)) {
         console.warn("Supabase attendance records query fallback:", error.message);
-        continue;
+        return [];
       }
       throw new Error(error.message);
     }
 
-    if (Array.isArray(data)) {
-      results.push(...(data as AttendanceRecordRow[]));
-    }
-  }
+    return Array.isArray(data) ? (data as AttendanceRecordRow[]) : [];
+  };
 
-  return results;
+  // Execute all chunks in parallel
+  const chunkResults = await Promise.all(chunks.map(fetchChunk));
+  return chunkResults.flat();
 }

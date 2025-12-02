@@ -3,15 +3,28 @@
 import { Edit, Save, Search, Trash2, Upload, UserPlus, X, Loader2, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// Custom hook for debouncing values - improves search performance
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { StudentTableSkeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Modal } from "@/components/ui/modal";
 import { Select } from "@/components/ui/select";
 import { useAuth } from "@/providers/auth-provider";
 import type { AppRole } from "@/types/auth";
-import type { Sector, StudentStatus, StudentWithGrades } from "@/types/database";
+import type { AcademicYear, Sector, StudentStatus, StudentWithGrades } from "@/types/database";
 import {
   fetchAttendanceRecordsForStudents,
   fetchClasses,
@@ -32,6 +45,8 @@ type StudentsPageProps = {
   initialSectors?: SectorRow[];
   initialClasses?: ClassRow[];
   initialStudents?: StudentRow[];
+  initialAttendanceRecords?: AttendanceRecordRow[];
+  initialAcademicYears?: AcademicYear[];
   currentRole: AppRole;
   assignedClassId?: string | null;
 };
@@ -103,6 +118,8 @@ export default function StudentsPage({
   initialSectors,
   initialClasses,
   initialStudents,
+  initialAttendanceRecords,
+  initialAcademicYears,
   currentRole,
   assignedClassId = null,
 }: StudentsPageProps) {
@@ -125,6 +142,7 @@ export default function StudentsPage({
     queryKey: ["sectors", "list"],
     queryFn: () => fetchSectors(supabase),
     initialData: initialSectors,
+    staleTime: 1000 * 60 * 30, // 30 phút - sectors hiếm khi thay đổi
   });
 
   const sectorById = useMemo(() => {
@@ -143,6 +161,7 @@ export default function StudentsPage({
     queryKey: ["classes", "list"],
     queryFn: () => fetchClasses(supabase),
     initialData: initialClasses,
+    staleTime: 1000 * 60 * 15, // 15 phút - classes ít thay đổi
   });
 
   const classRowsForDisplay = useMemo(() => {
@@ -243,6 +262,7 @@ export default function StudentsPage({
   } = useQuery<AttendanceRecordRow[]>({
     queryKey: ["students", "attendance-records", studentIdsForAttendance.join("|")],
     queryFn: () => fetchAttendanceRecordsForStudents(supabase, studentIdsForAttendance),
+    initialData: initialAttendanceRecords, // Server-prefetched data
     enabled: studentsEnabled && studentIdsForAttendance.length > 0,
   });
 
@@ -250,6 +270,8 @@ export default function StudentsPage({
   const { data: academicYears = [] } = useQuery({
     queryKey: ["academic-years"],
     queryFn: () => fetchAcademicYears(supabase),
+    initialData: initialAcademicYears, // Server-prefetched data
+    staleTime: 1000 * 60 * 30, // 30 phút - academic years hiếm khi thay đổi
     enabled: !!supabase,
   });
 
@@ -269,6 +291,7 @@ export default function StudentsPage({
   const [students, setStudents] = useState<StudentWithGrades[]>([]);
   const studentListSnapshotRef = useRef<string>("[]");
   const [searchTerm, setSearchTerm] = useState("");
+  const debouncedSearchTerm = useDebouncedValue(searchTerm, 300); // Debounce 300ms để giảm re-renders
   const [selectedClass, setSelectedClass] = useState(initialSelectedClassValue);
   const [statusFilter, setStatusFilter] = useState<StudentStatus | "ALL">("ACTIVE");
 
@@ -541,15 +564,29 @@ type StudentInfoMutationPayload = {
     [classMap, attendanceScoresByStudent],
   );
 
+  // ID-based change detection thay vì JSON.stringify (performance improvement)
+  const computeStudentListKey = useCallback((rows: StudentRow[]) => {
+    if (!rows.length) return "";
+    // Tạo key từ IDs để detect changes - đơn giản và nhanh hơn JSON.stringify
+    const ids = rows.map((r) => r.id ?? "");
+    ids.sort();
+    return `${rows.length}|${ids.join(",")}`;
+  }, []);
+
   useEffect(() => {
     if (!studentRows.length) {
-      studentListSnapshotRef.current = "[]";
+      studentListSnapshotRef.current = "";
       setStudents((previous) => {
         if (!previous.length) {
           return previous;
         }
         return [];
       });
+      return;
+    }
+
+    const nextKey = computeStudentListKey(studentRows);
+    if (studentListSnapshotRef.current === nextKey) {
       return;
     }
 
@@ -563,14 +600,9 @@ type StudentInfoMutationPayload = {
         return a.student_code.localeCompare(b.student_code);
       });
 
-    const nextSnapshot = JSON.stringify(transformed);
-    if (studentListSnapshotRef.current === nextSnapshot) {
-      return;
-    }
-
-    studentListSnapshotRef.current = nextSnapshot;
+    studentListSnapshotRef.current = nextKey;
     setStudents(transformed);
-  }, [studentRows, convertStudentRow, nameCollator]);
+  }, [studentRows, convertStudentRow, nameCollator, computeStudentListKey]);
 
   useEffect(() => {
     if (!successMessage) {
@@ -583,15 +615,18 @@ type StudentInfoMutationPayload = {
     };
   }, [successMessage]);
 
-  const filteredStudents = students.filter((student) => {
-    const matchesSearch =
-      student.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.student_code.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesClass =
-      !selectedClass || normalizeClassId(student.class_id) === normalizeClassId(selectedClass);
-    const matchesStatus = statusFilter === "ALL" || student.status === statusFilter;
-    return matchesSearch && matchesClass && matchesStatus;
-  });
+  const filteredStudents = useMemo(() => {
+    const lowerSearch = debouncedSearchTerm.toLowerCase();
+    return students.filter((student) => {
+      const matchesSearch =
+        student.full_name.toLowerCase().includes(lowerSearch) ||
+        student.student_code.toLowerCase().includes(lowerSearch);
+      const matchesClass =
+        !selectedClass || normalizeClassId(student.class_id) === normalizeClassId(selectedClass);
+      const matchesStatus = statusFilter === "ALL" || student.status === statusFilter;
+      return matchesSearch && matchesClass && matchesStatus;
+    });
+  }, [students, debouncedSearchTerm, selectedClass, statusFilter]);
 
   const buildStudentMutationPayload = (): StudentInfoMutationPayload => {
     const trimmedStudentCode = formData.student_code.trim();
@@ -895,12 +930,7 @@ type StudentInfoMutationPayload = {
         <p className="text-sm text-slate-500">Theo dõi thông tin, điểm số và điểm danh của từng thiếu nhi.</p>
       </header>
 
-      {isLoadingData && (
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-600">
-          <Loader2 className="h-4 w-4 animate-spin text-emerald-600" />
-          Đang tải dữ liệu thiếu nhi từ Supabase...
-        </div>
-      )}
+      {/* Loading banner removed - replaced with skeleton table below */}
 
       {queryError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
@@ -989,12 +1019,16 @@ type StudentInfoMutationPayload = {
         </div>
       </Card>
 
-      <div className="text-sm text-slate-600">
-        Hiển thị {filteredStudents.length} / {students.length} thiếu nhi
-      </div>
+      {isLoadingData && !students.length ? (
+        <StudentTableSkeleton rows={10} />
+      ) : (
+        <>
+          <div className="text-sm text-slate-600">
+            Hiển thị {filteredStudents.length} / {students.length} thiếu nhi
+          </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="border-b-2 border-slate-200 bg-slate-50">
               <th className="p-3 text-left font-semibold text-slate-700">Thiếu nhi</th>
@@ -1197,8 +1231,10 @@ type StudentInfoMutationPayload = {
               );
             })}
           </tbody>
-        </table>
-      </div>
+            </table>
+          </div>
+        </>
+      )}
 
       <Modal
         isOpen={showCreateModal || showEditModal}
