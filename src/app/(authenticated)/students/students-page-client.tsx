@@ -245,6 +245,7 @@ export default function StudentsPage({
         : fetchStudents(supabase),
     initialData: initialStudentsForQuery,
     enabled: studentsEnabled,
+    staleTime: 1000 * 60 * 5, // 5 phút - students thay đổi ít thường xuyên
   });
 
   const studentIdsForAttendance = useMemo(() => {
@@ -264,6 +265,7 @@ export default function StudentsPage({
     queryFn: () => fetchAttendanceRecordsForStudents(supabase, studentIdsForAttendance),
     initialData: initialAttendanceRecords, // Server-prefetched data
     enabled: studentsEnabled && studentIdsForAttendance.length > 0,
+    staleTime: 1000 * 60 * 5, // 5 phút - attendance records thay đổi sau mỗi buổi điểm danh
   });
 
   // Fetch academic years to get total_weeks for attendance calculation
