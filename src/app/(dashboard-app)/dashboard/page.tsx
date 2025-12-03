@@ -829,6 +829,8 @@ export default async function DashboardPage() {
               totalClasses: s.total_classes,
               totalStudents: s.total_students,
               totalTeachers: s.total_teachers,
+              attendanceAvg: s.attendance_avg,
+              studyAvg: s.study_avg,
             }))}
           />
         </div>

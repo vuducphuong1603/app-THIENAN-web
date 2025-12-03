@@ -12,8 +12,11 @@ export function AttendanceWidget({ sessions }: AttendanceWidgetProps) {
   // Take only 2 sessions for the compact view
   const displaySessions = sessions.slice(0, 2);
 
+  // Calculate max present value for dynamic height
+  const maxPresent = Math.max(...displaySessions.map(s => s.present), 1);
+
   return (
-    <div className="relative h-[305px] rounded-[15px] border border-white/60 bg-white p-6">
+    <div className="relative h-[305px] overflow-hidden rounded-[15px] border border-white/60 bg-white p-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="font-inter-tight text-[34px] font-medium leading-tight tracking-tight text-black">
@@ -28,24 +31,36 @@ export function AttendanceWidget({ sessions }: AttendanceWidgetProps) {
       </div>
 
       {/* Sessions */}
-      <div className="mt-6 grid grid-cols-2 gap-4">
-        {displaySessions.map((item, index) => (
-          <div key={item.session} className="space-y-2">
-            <p className="font-inter-tight text-lg font-medium text-black">{item.session}</p>
-            <div className="flex gap-3">
-              {/* Present bar */}
-              <div className={`rounded-lg bg-[#fa865e] p-3 ${index === 0 ? "h-[112px] w-[91px]" : "h-[130px] w-[91px]"}`}>
-                <p className="font-inter-tight text-base font-normal text-white">{item.present}</p>
-                <p className="font-inter-tight text-sm text-white">Có mặt</p>
-              </div>
-              {/* Pending bar */}
-              <div className={`rounded-lg bg-[#f3f3f3] p-3 ${index === 0 ? "h-[64px] w-[91px]" : "h-[47px] w-[91px]"}`}>
-                <p className="font-inter-tight text-base font-normal text-black">{item.pending}</p>
-                <p className="font-inter-tight text-sm text-black">Vắng mặt</p>
+      <div className="mt-4 grid grid-cols-2 gap-6">
+        {displaySessions.map((item) => {
+          // Calculate dynamic heights based on values
+          const presentHeight = Math.max(80, Math.min(130, (item.present / maxPresent) * 130));
+          const pendingHeight = Math.max(47, Math.min(80, 80 - ((item.present / maxPresent) * 30)));
+
+          return (
+            <div key={item.session} className="space-y-2">
+              <p className="font-inter-tight text-lg font-medium text-black">{item.session}</p>
+              <div className="flex items-end gap-3">
+                {/* Present bar */}
+                <div
+                  className="flex w-[91px] flex-col justify-start rounded-lg bg-[#fa865e] p-3"
+                  style={{ height: `${presentHeight}px` }}
+                >
+                  <p className="font-inter-tight text-base font-normal text-white">{item.present}</p>
+                  <p className="font-inter-tight text-sm text-white">Có mặt</p>
+                </div>
+                {/* Pending bar */}
+                <div
+                  className="flex w-[91px] flex-col justify-start rounded-lg bg-[#f3f3f3] p-3"
+                  style={{ height: `${pendingHeight}px` }}
+                >
+                  <p className="font-inter-tight text-base font-normal text-black">{item.pending}</p>
+                  <p className="font-inter-tight text-sm text-black">Vắng mặt</p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

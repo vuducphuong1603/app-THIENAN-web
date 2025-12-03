@@ -246,11 +246,28 @@ async function fetchTeacherInfoMap(
   }
 
   // Transform kết quả join thành format cũ
-  const transformedClasses = (classRows ?? []).map((cls) => ({
-    id: cls.id as string,
-    name: cls.name as string | null,
-    sector: (cls.sectors?.[0]?.code as string | null) ?? null,
-  }));
+  // Supabase returns sectors as object (many-to-one) not array
+  const transformedClasses = (classRows ?? []).map((cls) => {
+    // Handle both object and array format from Supabase join
+    const sectorsData = cls.sectors as { code?: string } | { code?: string }[] | null;
+    let sectorCode: string | null = null;
+
+    if (sectorsData) {
+      if (Array.isArray(sectorsData)) {
+        // If array, take first element
+        sectorCode = sectorsData[0]?.code ?? null;
+      } else {
+        // If object, access directly
+        sectorCode = sectorsData.code ?? null;
+      }
+    }
+
+    return {
+      id: cls.id as string,
+      name: cls.name as string | null,
+      sector: sectorCode,
+    };
+  });
 
   const classLookup = buildClassLookup(transformedClasses);
 
