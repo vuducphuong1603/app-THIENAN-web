@@ -10,9 +10,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const createSupabaseBrowserClient = () =>
-  createBrowserClient(supabaseUrl, supabaseAnonKey, {
-    cookieOptions: {
-      maxAge: 60 * 60 * 24 * 30, // 30 days for remember me
-      sameSite: "lax",
-    },
-  });
+  createBrowserClient(supabaseUrl, supabaseAnonKey);
