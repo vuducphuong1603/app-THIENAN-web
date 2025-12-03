@@ -5,3 +5,4 @@ export { SectorStatsWidget } from "./sector-stats-widget";
 export { AlertsWidget } from "./alerts-widget";
 export { WeeklyPlanWidget } from "./weekly-plan-widget";
 export { NotesWidget } from "./notes-widget";
+export { LogoutModal } from "./logout-modal";
