@@ -1,8 +1,14 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Sanitize env vars: remove all control characters that can cause fetch errors
+function sanitizeEnvVar(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.replace(/[\x00-\x1F\x7F\r\n]/g, "").trim();
+}
+
+const supabaseUrl = sanitizeEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = sanitizeEnvVar(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables.");

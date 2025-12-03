@@ -1,7 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Sanitize env vars: remove all control characters that can cause fetch errors
+function sanitizeEnvVar(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.replace(/[\x00-\x1F\x7F\r\n]/g, "").trim();
+}
+
+const supabaseUrl = sanitizeEnvVar(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseServiceRoleKey = sanitizeEnvVar(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 if (!supabaseUrl) {
   throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable.");
