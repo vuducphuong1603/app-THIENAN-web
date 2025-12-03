@@ -3,6 +3,8 @@ interface SectorStat {
   totalClasses: number;
   totalStudents: number;
   totalTeachers: number;
+  attendanceAvg?: number | null;
+  studyAvg?: number | null;
   maxClasses?: number;
   maxStudents?: number;
   maxTeachers?: number;
@@ -28,6 +30,113 @@ function ProgressBar({ value, max, color = "#fa865e" }: { value: number; max: nu
   );
 }
 
+// Simple line chart component for attendance and study averages
+function LineChart({ sectors }: { sectors: SectorStat[] }) {
+  const chartHeight = 80;
+  const chartWidth = 280;
+  const padding = 20;
+
+  // Calculate normalized values for drawing
+  const attendanceValues = sectors.map(s => s.attendanceAvg ?? 0);
+  const studyValues = sectors.map(s => s.studyAvg ?? 0);
+  const maxValue = Math.max(...attendanceValues, ...studyValues, 10);
+
+  const getY = (value: number) => {
+    const normalized = value / maxValue;
+    return chartHeight - padding - (normalized * (chartHeight - 2 * padding));
+  };
+
+  const getX = (index: number) => {
+    const step = (chartWidth - 2 * padding) / Math.max(sectors.length - 1, 1);
+    return padding + index * step;
+  };
+
+  const createPath = (values: number[]) => {
+    if (values.length === 0) return "";
+    return values
+      .map((v, i) => `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(v)}`)
+      .join(" ");
+  };
+
+  return (
+    <div className="mt-4 px-4">
+      {/* Chart */}
+      <svg width={chartWidth} height={chartHeight} className="mx-auto">
+        {/* Grid line */}
+        <line
+          x1={padding}
+          y1={chartHeight - padding}
+          x2={chartWidth - padding}
+          y2={chartHeight - padding}
+          stroke="#e5e5e5"
+          strokeWidth="1"
+        />
+
+        {/* Attendance line (orange) */}
+        <path
+          d={createPath(attendanceValues)}
+          fill="none"
+          stroke="#fa865e"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Study line (gray) */}
+        <path
+          d={createPath(studyValues)}
+          fill="none"
+          stroke="#d9d9d9"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Data points */}
+        {attendanceValues.map((v, i) => (
+          <circle
+            key={`att-${i}`}
+            cx={getX(i)}
+            cy={getY(v)}
+            r="3"
+            fill="#fa865e"
+          />
+        ))}
+        {studyValues.map((v, i) => (
+          <circle
+            key={`study-${i}`}
+            cx={getX(i)}
+            cy={getY(v)}
+            r="3"
+            fill="#d9d9d9"
+          />
+        ))}
+      </svg>
+
+      {/* X-axis labels */}
+      <div className="mt-2 flex justify-between px-4">
+        {sectors.map((s) => (
+          <span key={s.sector} className="font-inter-tight text-[9px] text-black/80">
+            {s.sector.split(" ")[0]}
+          </span>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="mt-3 flex items-center justify-center gap-6">
+        <div className="flex items-center gap-2">
+          <div className="h-0.5 w-6 bg-[#fa865e]" />
+          <span className="font-outfit text-[11px] text-[#8a8c90]">Điểm danh trung bình</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-0.5 w-6 bg-[#d9d9d9]" />
+          <span className="font-outfit text-[11px] text-[#8a8c90]">Học tập trung bình</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SectorStatsWidget({ sectors }: SectorStatsWidgetProps) {
   // Calculate max values for progress bars
   const maxClasses = Math.max(...sectors.map(s => s.totalClasses), 1);
@@ -35,7 +144,7 @@ export function SectorStatsWidget({ sectors }: SectorStatsWidgetProps) {
   const maxTeachers = Math.max(...sectors.map(s => s.totalTeachers), 1);
 
   return (
-    <div className="h-[796px] rounded-[15px] border border-white/60 bg-white">
+    <div className="h-[796px] overflow-hidden rounded-[15px] border border-white/60 bg-white">
       {/* Header */}
       <div className="flex items-center justify-between p-4">
         <div className="flex items-center gap-2">
@@ -86,6 +195,9 @@ export function SectorStatsWidget({ sectors }: SectorStatsWidgetProps) {
           </div>
         ))}
       </div>
+
+      {/* Line Chart Section */}
+      <LineChart sectors={sectors} />
     </div>
   );
 }
