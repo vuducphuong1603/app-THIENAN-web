@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { LogoutModal } from "./logout-modal";
 
 interface NavItem {
   label: string;
@@ -29,6 +30,7 @@ export function DashboardNavbar({ userName = "Người dùng", roleLabel = "Thà
   const pathname = usePathname();
   const router = useRouter();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -148,7 +150,10 @@ export function DashboardNavbar({ userName = "Người dùng", roleLabel = "Thà
               </Link>
               <hr className="my-1 border-gray-100" />
               <button
-                onClick={handleLogout}
+                onClick={() => {
+                  setIsDropdownOpen(false);
+                  setIsLogoutModalOpen(true);
+                }}
                 className="flex w-full items-center gap-3 px-4 py-3 font-outfit text-base text-red-600 transition hover:bg-red-50"
               >
                 <svg className="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -160,6 +165,13 @@ export function DashboardNavbar({ userName = "Người dùng", roleLabel = "Thà
           )}
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={() => setIsLogoutModalOpen(false)}
+        onConfirm={handleLogout}
+      />
     </nav>
   );
 }
