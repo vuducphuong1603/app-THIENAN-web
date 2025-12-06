@@ -5,4 +5,7 @@ export { SectorStatsWidget } from "./sector-stats-widget";
 export { AlertsWidget } from "./alerts-widget";
 export { WeeklyPlanWidget } from "./weekly-plan-widget";
 export { NotesWidget } from "./notes-widget";
+export { NoteCard, AddNoteCard } from "./note-card";
+export { AddNoteModal } from "./add-note-modal";
+export type { NoteFormData } from "./add-note-modal";
 export { LogoutModal } from "./logout-modal";

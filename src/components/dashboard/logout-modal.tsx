@@ -49,7 +49,7 @@ export function LogoutModal({ isOpen, onClose, onConfirm }: LogoutModalProps) {
             <h2 className="font-inter-tight text-2xl font-semibold leading-tight text-[#0d0d12]">
               Đăng xuất
             </h2>
-            <p className="font-inter-tight text-base leading-relaxed tracking-wide text-black/60">
+            <p className="font-inter-tight text-base leading-relaxed tracking-wide text-black/60 whitespace-nowrap">
               Bạn chắc chắn muốn đăng xuất Giáo xứ Thiên Ân?
             </p>
           </div>

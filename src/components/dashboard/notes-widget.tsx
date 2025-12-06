@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 
 interface CurrentTask {
   title: string;
@@ -34,22 +35,24 @@ export function NotesWidget({
     <div className="h-[481px] rounded-[15px] border border-white/60 bg-white p-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <span className="font-outfit text-xl font-medium text-black">Ghi chú của tôi</span>
-        <button className="flex size-[45px] items-center justify-center rounded-full bg-[#f6f6f6]">
+        <Link href="/dashboard/notes" className="font-outfit text-xl font-medium text-black transition hover:text-[#fa865e]">
+          Ghi chú của tôi
+        </Link>
+        <Link href="/dashboard/notes" className="flex size-[45px] items-center justify-center rounded-full bg-[#f6f6f6] transition hover:bg-[#e5e1dc]">
           <svg className="size-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
           </svg>
-        </button>
+        </Link>
       </div>
 
       {/* Stats Cards */}
       <div className="mt-4 flex gap-3">
         {/* Add Note Button */}
-        <button className="flex h-[132px] w-[125px] flex-col items-center justify-center rounded-3xl border border-dashed border-black/20 bg-[#f6f6f6]">
+        <Link href="/dashboard/notes" className="flex h-[132px] w-[125px] flex-col items-center justify-center rounded-3xl border border-dashed border-black/20 bg-[#f6f6f6] transition hover:bg-[#e5e1dc]">
           <svg className="size-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-        </button>
+        </Link>
 
         {/* Classes Card */}
         <div className="h-[132px] w-[173px] rounded-[30px] bg-[#f6f6f6] p-4">
