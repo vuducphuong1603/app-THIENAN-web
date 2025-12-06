@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Manrope, Outfit, Inter_Tight } from "next/font/google";
-import Image from "next/image";
 import "./globals.css";
 
 import { AuthProvider } from "@/providers/auth-provider";
@@ -45,14 +44,6 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className={`${geistSans.variable} ${geistMono.variable} ${manrope.variable} ${outfit.variable} ${interTight.variable} antialiased text-slate-900`}>
-        {/* Global Background Image */}
-        <Image
-          src="/auth-background.png"
-          alt="Background"
-          fill
-          className="fixed inset-0 -z-10 object-cover"
-          priority
-        />
         <QueryProvider>
           <AuthProvider>
             <NavigationGuard />
