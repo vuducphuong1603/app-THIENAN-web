@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
+
 interface LogoutModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void> | void;
 }
 
 // Logout icon component matching Figma design
@@ -23,14 +25,26 @@ function LogoutIcon() {
 }
 
 export function LogoutModal({ isOpen, onClose, onConfirm }: LogoutModalProps) {
+  const [isLoading, setIsLoading] = useState(false);
+
   if (!isOpen) return null;
+
+  const handleConfirm = async () => {
+    if (isLoading) return;
+    setIsLoading(true);
+    try {
+      await onConfirm();
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/40"
-        onClick={onClose}
+        onClick={isLoading ? undefined : onClose}
       />
 
       {/* Modal */}
@@ -59,15 +73,27 @@ export function LogoutModal({ isOpen, onClose, onConfirm }: LogoutModalProps) {
         <div className="flex w-full gap-4">
           <button
             onClick={onClose}
-            className="flex h-14 flex-1 items-center justify-center rounded-full bg-neutral-100 px-4 py-2 font-outfit text-base font-semibold tracking-wide text-[#0d0d12] transition hover:bg-neutral-200"
+            disabled={isLoading}
+            className="flex h-14 flex-1 items-center justify-center rounded-full bg-neutral-100 px-4 py-2 font-outfit text-base font-semibold tracking-wide text-[#0d0d12] transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Hủy
           </button>
           <button
-            onClick={onConfirm}
-            className="flex h-14 flex-1 items-center justify-center rounded-full bg-[#fa865e] px-4 py-2 font-outfit text-base font-semibold tracking-wide text-white shadow-[0px_1px_2px_0px_rgba(13,13,18,0.06)] transition hover:bg-[#e5764e]"
+            onClick={handleConfirm}
+            disabled={isLoading}
+            className="flex h-14 flex-1 items-center justify-center gap-2 rounded-full bg-[#fa865e] px-4 py-2 font-outfit text-base font-semibold tracking-wide text-white shadow-[0px_1px_2px_0px_rgba(13,13,18,0.06)] transition hover:bg-[#e5764e] disabled:cursor-not-allowed disabled:opacity-70"
           >
-            Đăng xuất
+            {isLoading ? (
+              <>
+                <svg className="size-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Đang xử lý...
+              </>
+            ) : (
+              "Đăng xuất"
+            )}
           </button>
         </div>
       </div>

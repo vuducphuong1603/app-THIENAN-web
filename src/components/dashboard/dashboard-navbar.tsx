@@ -2,10 +2,10 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect } from "react";
 
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useAuth } from "@/providers/auth-provider";
 import { LogoutModal } from "./logout-modal";
 
 interface NavItem {
@@ -28,9 +28,10 @@ const NAV_ITEMS: NavItem[] = [
 
 export function DashboardNavbar({ userName = "Người dùng", roleLabel = "Thành viên", avatarUrl }: DashboardNavbarProps) {
   const pathname = usePathname();
-  const router = useRouter();
+  const { signOut } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown when clicking outside
@@ -45,9 +46,13 @@ export function DashboardNavbar({ userName = "Người dùng", roleLabel = "Thà
   }, []);
 
   const handleLogout = async () => {
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    router.push("/login");
+    if (isLoggingOut) return; // Prevent double-click
+    setIsLoggingOut(true);
+    try {
+      await signOut();
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (

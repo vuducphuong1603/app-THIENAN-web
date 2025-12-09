@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/providers/auth-provider";
 
-const AUTH_ROUTE_PREFIXES = ["/login"];
+const AUTH_ROUTE_PREFIXES = ["/login", "/register", "/forgot-password", "/reset-password"];
 
 function isAuthRoute(pathname: string) {
   return AUTH_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

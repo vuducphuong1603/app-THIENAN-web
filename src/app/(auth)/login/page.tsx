@@ -27,6 +27,10 @@ export default function LoginPage() {
   const { login, session, isAuthenticated } = useAuth();
   const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [loginError, setLoginError] = useState<{
+    field: "phone" | "password" | "both";
+    message: string;
+  } | null>(null);
 
   const {
     register,
@@ -59,6 +63,7 @@ export default function LoginPage() {
 
   const onSubmit = handleSubmit(async ({ phone, password, remember }) => {
     setFormError(null);
+    setLoginError(null);
     const { error } = await login({
       phone,
       password,
@@ -66,7 +71,30 @@ export default function LoginPage() {
     });
 
     if (error) {
-      setFormError(error);
+      // Phân loại lỗi dựa trên message từ Supabase
+      const lowerError = error.toLowerCase();
+      if (
+        lowerError.includes("invalid login credentials") ||
+        lowerError.includes("invalid credentials")
+      ) {
+        // Lỗi thông tin đăng nhập sai - hiển thị lỗi ở cả 2 field
+        setLoginError({
+          field: "both",
+          message: "Tên đăng nhập hoặc mật khẩu không đúng!",
+        });
+      } else if (lowerError.includes("email") || lowerError.includes("user")) {
+        setLoginError({
+          field: "phone",
+          message: "Tên đăng nhập sai!",
+        });
+      } else if (lowerError.includes("password")) {
+        setLoginError({
+          field: "password",
+          message: "Mật khẩu sai!",
+        });
+      } else {
+        setFormError(error);
+      }
       return;
     }
 
@@ -116,29 +144,59 @@ export default function LoginPage() {
             placeholder="Nhập tên đăng nhập"
             autoComplete="username"
             className={`h-[52px] w-full rounded-xl border px-3 py-2 font-manrope text-base font-normal leading-6 tracking-[0.32px] text-[#0D0D12] placeholder:text-[#818898] focus:outline-none focus:ring-1 ${
-              errors.phone
-                ? "border-[#df1c41] bg-[#fff0f3] focus:border-[#df1c41] focus:ring-[#df1c41]"
+              errors.phone ||
+              loginError?.field === "phone" ||
+              loginError?.field === "both"
+                ? "border-[#df1c41] bg-[rgba(250,134,94,0.2)] focus:border-[#df1c41] focus:ring-[#df1c41]"
                 : "border-[#DFE1E7] bg-white focus:border-[#fa865e] focus:ring-[#fa865e]"
             }`}
-            {...register("phone")}
+            {...register("phone", {
+              onChange: () => {
+                if (loginError) setLoginError(null);
+              },
+            })}
           />
           {errors.phone ? (
             <div className="flex items-center gap-1">
               <svg
-                className="h-4 w-4 text-[#df1c41]"
+                className="h-4 w-4 shrink-0 text-[#df1c41]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={1.5}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  d="M12 8v4m0 4h.01"
                 />
               </svg>
-              <span className="text-sm font-normal leading-[21px] tracking-[0.28px] text-[#df1c41]">
+              <span className="text-xs font-normal text-[#df1c41]">
                 {errors.phone.message}
+              </span>
+            </div>
+          ) : (loginError?.field === "phone" ||
+              loginError?.field === "both") ? (
+            <div className="flex items-center gap-1">
+              <svg
+                className="h-4 w-4 shrink-0 text-[#df1c41]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M12 8v4m0 4h.01"
+                />
+              </svg>
+              <span className="text-xs font-normal text-[#df1c41]">
+                {loginError.field === "both"
+                  ? "Tên đăng nhập hoặc mật khẩu không đúng!"
+                  : "Tên đăng nhập sai!"}
               </span>
             </div>
           ) : null}
@@ -160,11 +218,17 @@ export default function LoginPage() {
               placeholder="Nhập mật khẩu"
               autoComplete="current-password"
               className={`h-[52px] w-full rounded-xl border px-3 py-2 pr-12 font-manrope text-base font-normal leading-6 tracking-[0.32px] text-[#0D0D12] placeholder:text-[#818898] focus:outline-none focus:ring-1 ${
-                errors.password
-                  ? "border-[#df1c41] bg-[#fff0f3] focus:border-[#df1c41] focus:ring-[#df1c41]"
+                errors.password ||
+                loginError?.field === "password" ||
+                loginError?.field === "both"
+                  ? "border-[#df1c41] bg-[rgba(250,134,94,0.2)] focus:border-[#df1c41] focus:ring-[#df1c41]"
                   : "border-[#DFE1E7] bg-white focus:border-[#fa865e] focus:ring-[#fa865e]"
               }`}
-              {...register("password")}
+              {...register("password", {
+                onChange: () => {
+                  if (loginError) setLoginError(null);
+                },
+              })}
             />
             <button
               type="button"
@@ -211,20 +275,41 @@ export default function LoginPage() {
           {errors.password ? (
             <div className="flex items-center gap-1">
               <svg
-                className="h-4 w-4 text-[#df1c41]"
+                className="h-4 w-4 shrink-0 text-[#df1c41]"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
               >
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={1.5}
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                  d="M12 8v4m0 4h.01"
                 />
               </svg>
-              <span className="text-sm font-normal leading-[21px] tracking-[0.28px] text-[#df1c41]">
+              <span className="text-xs font-normal text-[#df1c41]">
                 {errors.password.message}
+              </span>
+            </div>
+          ) : loginError?.field === "password" ? (
+            <div className="flex items-center gap-1">
+              <svg
+                className="h-4 w-4 shrink-0 text-[#df1c41]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <circle cx="12" cy="12" r="10" strokeWidth={1.5} />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M12 8v4m0 4h.01"
+                />
+              </svg>
+              <span className="text-xs font-normal text-[#df1c41]">
+                Mật khẩu sai!
               </span>
             </div>
           ) : null}

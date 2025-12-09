@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import type { AuthChangeEvent, Session, SupabaseClient, User } from "@supabase/supabase-js";
 
 import { authStorage } from "@/lib/auth/storage";
@@ -15,11 +14,19 @@ type LoginCredentials = {
   remember?: boolean;
 };
 
+type RegisterCredentials = {
+  username: string;
+  email: string;
+  password: string;
+};
+
 interface AuthContextValue {
   supabase: SupabaseClient;
   session: SessionState;
   isAuthenticated: boolean;
   login: (credentials: LoginCredentials) => Promise<{ error?: string }>;
+  register: (credentials: RegisterCredentials) => Promise<{ error?: string }>;
+  resetPassword: (email: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -92,7 +99,6 @@ function isTerminalSignOut(event: AuthChangeEvent) {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const [supabase] = useState(createSupabaseBrowserClient);
   const [session, setSession] = useState<SessionState>({
     isLoading: true,
@@ -218,33 +224,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         return {};
       },
-      signOut: async () => {
-        try {
-          const { error: clientError } = await supabase.auth.signOut({ scope: "local" });
-          if (clientError) {
-            console.warn("Client session sign-out warning:", clientError);
-          }
+      register: async ({ username, email, password }) => {
+        const cleanedUsername = username.trim();
+        const cleanedEmail = email.trim().toLowerCase();
+        const phoneEmail = `${cleanedUsername}@phone.local`.toLowerCase();
 
-          const response = await fetch("/api/auth/signout", {
-            method: "POST",
-            cache: "no-store",
-          });
+        console.log("[Register] Attempting signup with:", { phoneEmail, cleanedEmail });
 
-          if (!response.ok) {
-            const detail = await response.text().catch(() => "");
-            throw new Error(detail || `Server sign-out failed with status ${response.status}`);
+        const { data, error } = await supabase.auth.signUp({
+          email: phoneEmail,
+          password,
+          options: {
+            data: {
+              phone: cleanedUsername,
+              email: cleanedEmail,
+              full_name: cleanedUsername,
+            },
+          },
+        });
+
+        console.log("[Register] Signup response:", { data, error });
+
+        if (error) {
+          console.error("[Register] Signup error:", error);
+          if (error.message.includes("already registered")) {
+            return { error: "Tên đăng nhập này đã được sử dụng" };
           }
-        } catch (error) {
-          console.error("Sign out error:", error);
-          window.location.href = "/login";
-          return;
-        } finally {
-          authStorage.clear();
-          applySession(null);
+          if (error.message.includes("Signups not allowed")) {
+            return { error: "Chức năng đăng ký đã bị tắt. Vui lòng liên hệ quản trị viên." };
+          }
+          return { error: error.message };
         }
 
-        router.replace("/login");
-        router.refresh();
+        const authSession = data.session;
+        const user = data.user;
+
+        console.log("[Register] User created:", { userId: user?.id, hasSession: !!authSession });
+
+        if (!user) {
+          return { error: "Không thể tạo tài khoản. Vui lòng thử lại." };
+        }
+
+        if (authSession) {
+          const profile = await loadProfile(supabase, user.id);
+          applySession(snapshotFromSession(authSession, profile ?? fallbackProfile(user)));
+        }
+
+        return {};
+      },
+      resetPassword: async (email: string) => {
+        const cleanedEmail = email.trim().toLowerCase();
+
+        const { error } = await supabase.auth.resetPasswordForEmail(cleanedEmail, {
+          redirectTo: `${window.location.origin}/reset-password`,
+        });
+
+        if (error) {
+          console.error("[ResetPassword] Error:", error);
+          if (error.message.includes("rate limit")) {
+            return { error: "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau." };
+          }
+          return { error: "Không thể gửi email đặt lại mật khẩu. Vui lòng thử lại." };
+        }
+
+        return {};
+      },
+      signOut: async () => {
+        // Always clear local state first to ensure logout works even if API fails
+        authStorage.clear();
+        applySession(null);
+
+        try {
+          // Try client-side signout - ignore errors as session may already be expired
+          await supabase.auth.signOut({ scope: "local" }).catch(() => {});
+
+          // Try server-side signout - ignore errors as we've already cleared local state
+          await fetch("/api/auth/signout", {
+            method: "POST",
+            cache: "no-store",
+          }).catch(() => {});
+        } catch {
+          // Ignore all errors - we've already cleared local state
+        }
+
+        // Use window.location for a hard redirect to ensure complete state reset
+        window.location.href = "/login";
       },
       refreshProfile: async () => {
         const current = session.session;
@@ -258,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       },
     }),
-    [applySession, router, session, supabase],
+    [applySession, session, supabase],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
